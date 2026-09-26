@@ -45,7 +45,7 @@ Mac mini 提交推送后可经 SSH 自动把 MacBook 同步到最新（fast-forw
 git config --add sync.targets 'macbook:/Users/huangbo/Dev/Projects/web-crawler'
 ```
 
-配置后每次 `git-commit-push` 推送完成即自动同步；MacBook 侧改完代码建议自行提交推送，避免两端分叉。
+配置后用 `git-sync` 技能（或 `/git-sync`）提交推送，完成即自动同步 MacBook；MacBook 侧改完代码建议自行提交推送，避免两端分叉。
 
 ## 合规
 
