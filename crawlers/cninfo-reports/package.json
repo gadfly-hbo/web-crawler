@@ -1,0 +1,16 @@
+{
+  "name": "cninfo-reports",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A 股上市公司财报下载器（巨潮资讯网）",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
