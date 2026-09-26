@@ -37,6 +37,16 @@ pnpm --filter cninfo-reports start -- --company 平安银行 --year 2024 --type 
 - 共享代码暂不抽取：待 2~3 个爬虫出现重复后，把稳定部分抽到 `packages/`，以 `workspace:*` 协议引用。
 - 新增爬虫：在 `crawlers/` 下新建目录（已被 workspace 通配覆盖）→ 完善其 README → 更新本文件爬虫清单。
 
+## 多机同步
+
+Mac mini 提交推送后可经 SSH 自动把 MacBook 同步到最新（fast-forward only，安全跳过脏工作区）。按机器做局部配置（不入库）：
+
+```bash
+git config --add sync.targets 'macbook:/Users/huangbo/Dev/Projects/web-crawler'
+```
+
+配置后每次 `git-commit-push` 推送完成即自动同步；MacBook 侧改完代码建议自行提交推送，避免两端分叉。
+
 ## 合规
 
 所有爬虫仅用于公开数据的个人研究用途；遵守目标站点 robots.txt 与合理请求频率（各爬虫内置限速与重试），登录态凭据不得提交入库。
