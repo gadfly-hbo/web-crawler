@@ -21,10 +21,9 @@ if ! command -v pnpm >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ ! -d node_modules ]; then
-  echo "[首次运行] 安装依赖…"
-  pnpm install
-fi
+# 依赖始终对齐 lockfile（跨机同步代码后依赖可能已变化；pnpm 无变更时秒级跳过）
+pnpm install
+
 if [ ! -f apps/workbench/web/dist/index.html ]; then
   echo "[首次运行] 构建工作台界面…"
   pnpm --filter workbench build

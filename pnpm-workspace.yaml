@@ -2,3 +2,5 @@ packages:
   - 'crawlers/*'
   - 'apps/*'
   - 'packages/*'
+allowBuilds:
+  esbuild: true
