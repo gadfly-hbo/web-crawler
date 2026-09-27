@@ -31,6 +31,17 @@ pnpm --filter cninfo-reports start -- -c 000001 --from 2025-07-01 --to 2025-09-3
 
 完整参数说明：`pnpm --filter cninfo-reports start -- -h`
 
+## 程序化消费（--json）
+
+加 `--json` 后 stdout 改为 NDJSON 事件流（每行一个 JSON 对象，人类可读文本全部抑制），供 `apps/workbench` 等程序消费：
+
+- `start`（totalCompanies / dryRun）→ `company`（index/total/code/name）→ `file`（status: downloaded/skipped/failed + 公司/标题/路径/原因）→ `preview`（仅 dry-run：companies/reports 计数）→ `done`（summary 汇总）
+- 参数校验失败或致命错误输出 `error` 事件并以非零码退出；检索目标失败输出 `queryError` 事件。
+- 默认模式（不带 `--json`）输出与行为完全不变。
+- 测试/调试可用 `CNINFO_ORIGIN` / `CNINFO_STATIC_ORIGIN` 环境变量覆盖源站。
+
+测试：`pnpm --filter cninfo-reports test`（本地假巨潮服务器驱动真实 CLI 子进程，不触网）。
+
 ## 时间语义
 
 - `--year 2024`：抓「报告期为 2024 年」的财报。A 股年报在次年 3~4 月才发布，因此检索窗口自动取 `2024-01-01 ~ 2025-12-31`（按公告发布日检索），再按公告标题中的「2024年」过滤。

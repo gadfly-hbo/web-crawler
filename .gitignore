@@ -13,3 +13,6 @@ data/
 # 日志与系统文件
 *.log
 .DS_Store
+
+# dev-flow 本机状态（流程产物 .flow/*.md 入库，本机状态除外）
+.flow/state.json

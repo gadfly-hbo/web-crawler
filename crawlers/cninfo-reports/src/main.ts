@@ -11,7 +11,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { parseArgs, type ReportType } from './cli.js';
+import { parseArgs, type CliOptions, type ReportType } from './cli.js';
 import {
   downloadAnnouncement,
   fetchStockList,
@@ -56,7 +56,33 @@ interface CompanyMatch {
 }
 
 function log(msg: string): void {
-  console.log(msg);
+  if (!jsonMode) console.log(msg);
+}
+
+/** --json 模式：stdout 只承载 NDJSON 事件（每行一个对象），人类可读文本全部抑制。 */
+let jsonMode = false;
+
+type JsonEvent =
+  | { type: 'start'; totalCompanies: number; dryRun: boolean }
+  | { type: 'queryError'; target: string; reason: string }
+  | { type: 'company'; index: number; total: number; code: string; name: string }
+  | {
+      type: 'file';
+      status: 'downloaded' | 'skipped' | 'failed';
+      code: string;
+      name: string;
+      reportType?: string;
+      title?: string;
+      path?: string; // 相对 reports/ 目录
+      bytes?: number;
+      reason?: string;
+    }
+  | { type: 'preview'; companies: number; reports: number }
+  | { type: 'done'; summary: Summary & { outDir: string } }
+  | { type: 'error'; message: string };
+
+function emit(event: JsonEvent): void {
+  process.stdout.write(JSON.stringify(event) + '\n');
 }
 
 /** 巨潮公告时间为北京时间，转日期字符串时显式加 8 小时偏移。 */
@@ -138,7 +164,18 @@ async function collectAnnouncements(
 
 async function main(): Promise<void> {
   // pnpm 12 会把参数分隔符 `--` 也透传给脚本，直接过滤掉
-  const opts = parseArgs(process.argv.slice(2).filter((a) => a !== '--'));
+  const argv = process.argv.slice(2).filter((a) => a !== '--');
+  // 先扫 --json：参数校验失败也要按机器可读格式回报
+  jsonMode = argv.includes('--json');
+  let opts: CliOptions;
+  try {
+    opts = parseArgs(argv);
+  } catch (err) {
+    if (!jsonMode) throw err;
+    emit({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+    process.exitCode = 1;
+    return;
+  }
   setRateLimit(opts.sleepMs);
 
   const targets: QueryTarget[] = [];
@@ -202,7 +239,9 @@ async function main(): Promise<void> {
       log(`  候选公告 ${anns.length} 条，匹配 ${matched} 条`);
     } catch (err) {
       summary.failed++;
-      log(`  [error] 检索失败：${err instanceof Error ? err.message : String(err)}`);
+      const reason = err instanceof Error ? err.message : String(err);
+      log(`  [error] 检索失败：${reason}`);
+      if (jsonMode) emit({ type: 'queryError', target: target.label, reason });
     }
   }
 
@@ -213,12 +252,16 @@ async function main(): Promise<void> {
     companies = companies.slice(0, opts.limit);
   }
   summary.companies = companies.length;
+  if (jsonMode) emit({ type: 'start', totalCompanies: companies.length, dryRun: opts.dryRun });
   log('');
 
   // 下载阶段：按公司遍历
   if (!opts.dryRun) await mkdir(outDir, { recursive: true });
   for (const [idx, company] of companies.entries()) {
     log(`=== [${idx + 1}/${companies.length}] ${company.code} ${company.name} ===`);
+    if (jsonMode) {
+      emit({ type: 'company', index: idx + 1, total: companies.length, code: company.code, name: company.name });
+    }
     summary.matched += company.items.length;
     try {
       for (const { ann, type } of company.items) {
@@ -233,19 +276,24 @@ async function main(): Promise<void> {
         }
         await mkdir(path.dirname(file), { recursive: true });
         let status: string;
+        const rel = path.relative(reportsDir, file);
         if (await fileExists(file)) {
           status = 'skipped-existing';
           summary.skipped++;
-          log(`  = 已存在 ${path.relative(reportsDir, file)}`);
+          log(`  = 已存在 ${rel}`);
+          if (jsonMode) {
+            emit({ type: 'file', status: 'skipped', code: company.code, name: company.name, reportType: type, title: ann.title, path: rel });
+          }
         } else {
           const buf = await downloadAnnouncement(ann);
           await writeFile(file, buf);
           status = 'downloaded';
           summary.downloaded++;
           summary.bytes += buf.length;
-          log(
-            `  ↓ [${REPORT_TYPES[type].label}] ${path.relative(reportsDir, file)}（${fmtBytes(buf.length)}）`,
-          );
+          log(`  ↓ [${REPORT_TYPES[type].label}] ${rel}（${fmtBytes(buf.length)}）`);
+          if (jsonMode) {
+            emit({ type: 'file', status: 'downloaded', code: company.code, name: company.name, reportType: type, title: ann.title, path: rel, bytes: buf.length });
+          }
         }
         await appendFile(
           indexPath,
@@ -266,19 +314,30 @@ async function main(): Promise<void> {
       }
     } catch (err) {
       summary.failed++;
-      log(`  [error] 下载失败：${err instanceof Error ? err.message : String(err)}`);
+      const reason = err instanceof Error ? err.message : String(err);
+      log(`  [error] 下载失败：${reason}`);
+      if (jsonMode) emit({ type: 'file', status: 'failed', code: company.code, name: company.name, reason });
     }
   }
 
   log('');
+  if (opts.dryRun && jsonMode) {
+    emit({ type: 'preview', companies: summary.companies, reports: summary.matched });
+  }
   log(
     `完成：${summary.companies} 家公司，匹配 ${summary.matched} 份报告，新下载 ${summary.downloaded} 份（${fmtBytes(summary.bytes)}），已存在跳过 ${summary.skipped} 份，失败 ${summary.failed} 处`,
   );
   if (!opts.dryRun) log(`PDF 目录：${reportsDir}\n索引文件：${indexPath}`);
+  if (jsonMode) emit({ type: 'done', summary: { ...summary, outDir } });
   if (summary.failed > 0) process.exitCode = 1;
 }
 
 main().catch((err) => {
-  console.error(`[fatal] ${err instanceof Error ? err.message : String(err)}`);
+  const message = err instanceof Error ? err.message : String(err);
+  if (jsonMode) {
+    emit({ type: 'error', message });
+  } else {
+    console.error(`[fatal] ${message}`);
+  }
   process.exitCode = 1;
 });

@@ -1,8 +1,11 @@
 /** 巨潮资讯网（法定信息披露平台）公开接口封装。 */
+import process from 'node:process';
+
 import { httpBuffer, httpJson } from './http.js';
 
-const CNINFO_ORIGIN = 'https://www.cninfo.com.cn';
-const STATIC_ORIGIN = 'https://static.cninfo.com.cn';
+// 源站可用环境变量覆盖，供测试以本地假服务器为系统边界替身；默认行为不变
+const CNINFO_ORIGIN = process.env.CNINFO_ORIGIN ?? 'https://www.cninfo.com.cn';
+const STATIC_ORIGIN = process.env.CNINFO_STATIC_ORIGIN ?? 'https://static.cninfo.com.cn';
 const QUERY_REFERER = `${CNINFO_ORIGIN}/new/commonUrl/pageOfSearch?url=disclosure/list/search`;
 
 export interface StockInfo {

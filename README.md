@@ -7,16 +7,27 @@
 ```
 web-crawler/
 ├── crawlers/          # 每个爬虫一个自包含目录，可独立运行
+├── apps/              # 面向用户的应用（如数据采集工作台 workbench）
 ├── packages/          # 共享库（暂未抽取，见下方约定）
-├── data/              # 各爬虫统一输出目录（gitignore，不入库）
+├── data/              # 各爬虫与工作台统一输出目录（gitignore，不入库）
 └── scripts/           # 仓库级脚本（预留）
 ```
+
+## 数据采集工作台（非技术同学入口）
+
+双击根目录 **`启动采集工作台.command`** 即可：首次运行自动安装依赖、构建界面并打开浏览器。在页面里选公司/行业 → 预览数量 → 开始采集，进度实时可见，产出的 PDF 可直接下载或在 Finder 中管理。
+
+技术细节见 [`apps/workbench`](./apps/workbench/README.md)。
 
 ## 爬虫清单
 
 | 目录 | 目标 | 说明 |
 | --- | --- | --- |
-| [`crawlers/cninfo-reports`](./crawlers/cninfo-reports) | 巨潮资讯网 | A 股上市公司财报（年报/中报/季报），支持按公司、行业、年份筛选下载 PDF |
+| [`crawlers/cninfo-reports`](./crawlers/cninfo-reports) | 巨潮资讯网 | A 股上市公司财报（年报/中报/季报），支持按公司、行业、年份筛选下载 PDF；`--json` 输出 NDJSON 事件供工作台消费 |
+
+| 应用 | 说明 |
+| --- | --- |
+| [`apps/workbench`](./apps/workbench) | 数据采集工作台：面向非技术运营的本机 Web 界面（双击 `启动采集工作台.command` 启动） |
 
 ## 快速开始
 

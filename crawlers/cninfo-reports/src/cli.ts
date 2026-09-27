@@ -14,6 +14,7 @@ export interface CliOptions {
   sleepMs: number;
   dryRun: boolean;
   outDir?: string;
+  json: boolean;
 }
 
 export const USAGE = `用法：pnpm --filter cninfo-reports start -- [选项]
@@ -28,6 +29,7 @@ export const USAGE = `用法：pnpm --filter cninfo-reports start -- [选项]
       --limit <N>                 最多处理 N 家公司，按代码排序取前 N（调试/试跑用）
       --sleep <ms>                相邻请求最小间隔，默认 1000，最低 200
       --dry-run                   只列出将下载的文件，不下载、不写任何文件
+      --json                      输出 NDJSON 结构化事件（供工作台等程序消费），替代人类可读文本
   -o, --out <dir>                 输出根目录，默认 <仓库根>/data/cninfo-reports
   -h, --help                      显示本帮助
 
@@ -50,6 +52,7 @@ export function parseArgs(argv: string[]): CliOptions {
     types: [],
     sleepMs: 1000,
     dryRun: false,
+    json: false,
   };
   // 解析阶段先收集原始字符串，校验通过后再展开为类型安全的 ReportType
   const rawTypes: string[] = [];
@@ -99,6 +102,9 @@ export function parseArgs(argv: string[]): CliOptions {
         break;
       case '--dry-run':
         opts.dryRun = true;
+        break;
+      case '--json':
+        opts.json = true;
         break;
       case '-o':
       case '--out':
