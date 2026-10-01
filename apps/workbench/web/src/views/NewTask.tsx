@@ -178,7 +178,7 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
                 <span key={c.code} className="chip chip-accent">
                   {c.name} {c.code}
                   <button
-                    className="btn btn-ghost btn-sm"
+                    className="btn-x"
                     onClick={() => setCompanies(companies.filter((x) => x.code !== c.code))}
                     aria-label={`移除 ${c.name}`}
                   >
@@ -228,7 +228,7 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
               {industries.map((i) => (
                 <span key={i} className="chip chip-accent">
                   {i}
-                  <button className="btn btn-ghost btn-sm" onClick={() => setIndustries(industries.filter((x) => x !== i))} aria-label={`移除 ${i}`}>
+                  <button className="btn-x" onClick={() => setIndustries(industries.filter((x) => x !== i))} aria-label={`移除 ${i}`}>
                     ×
                   </button>
                 </span>

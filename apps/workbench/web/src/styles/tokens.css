@@ -1,33 +1,43 @@
-/* Xanthil 暖灰青工作台 token（源：~/.zcode/design/DESIGN.md，值不改名不改动） */
+/* Xanthil 橘accent 桌面工作台 token（源：~/.zcode/design/DESIGN.md 2026-09-28 契约版，值不改名不改动） */
 :root {
-  --bg: #f7f6f3;
+  --bg: #eceae5;
+  --shell: #f7f6f3;
   --surface: #ffffff;
-  --surface-2: #f0efec;
-  --border: #e2e0db;
-  --border-strong: #cfcdc6;
-  --text: #1f1e1b;
-  --text-2: #5b5952;
-  --text-3: #8a877e;
-  --accent: #0f766e;
-  --accent-strong: #0b5c55;
-  --accent-soft: #e6f4f2;
-  --accent-line: #bfe3de;
-  --ok: #166534;
-  --ok-soft: #e7f4ea;
-  --ok-line: #cbe6d2;
-  --warn: #92400e;
-  --warn-soft: #fdf1e2;
+  --surface-2: #f4f3ef;
+  --soft: #f7f6f2;
+  --border: #e5e2dc;
+  --border-strong: #d8d3cb;
+  --text: #1d2027;
+  --text-2: #6f7480;
+  --text-3: #8a8076;
+  --accent: #e8643a;
+  --accent-strong: #bf4927;
+  --accent-soft: #fff1e8;
+  --accent-line: #e8c1b4;
+  --navy: #263442;
+  --navy-soft: #edf3f5;
+  --navy-ink: #496271;
+  --primary: #e8643a;
+  --ok: #176247;
+  --ok-soft: #def3e9;
+  --ok-line: #bfddcf;
+  --warn: #855211;
+  --warn-soft: #fff1d6;
   --warn-line: #f0dfc2;
-  --fail: #b91c1c;
-  --fail-soft: #fbeaea;
+  --fail: #952f2f;
+  --fail-soft: #ffe5e5;
   --fail-line: #f3caca;
   --queue: #6d5bd0;
   --queue-ink: #5b48c0;
   --queue-soft: #efecfb;
   --queue-line: #d9d2f5;
+  --dot-amber: #d28c2d;
+  --dot-green: #3e9a73;
+  --dot-gray: #aaaaaa;
+  --dot-red: #c84c4c;
 
-  --rounded-base: 10px;
-  --rounded-sm: 6px;
+  --rounded-base: 14px;
+  --rounded-sm: 8px;
   --rounded-pill: 999px;
 
   --sp-xs: 4px;
@@ -36,6 +46,10 @@
   --sp-lg: 14px;
   --sp-xl: 22px;
 
-  --font-sans: -apple-system, 'SF Pro Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --shadow-flat: 0 3px 12px rgba(40, 36, 30, 0.04);
+  --shadow-float: 0 18px 48px rgba(35, 35, 30, 0.12);
+  --focus-ring: 3px solid rgba(232, 100, 58, 0.28);
+
+  --font-sans: Inter, -apple-system, 'SF Pro Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
 }

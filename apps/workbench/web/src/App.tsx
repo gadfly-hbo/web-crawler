@@ -101,27 +101,44 @@ export function App() {
     </button>
   );
 
+  const onTasksView = hash === '#/' || hash === '' || hash.startsWith('#/tasks') || hash === '#/new';
+  const onFilesView = hash === '#/files';
+
   return (
     <div className={`shell${activeTask ? ' with-inspector' : ''}`}>
-      <aside className="sidebar">
-        <div className="brand">
-          数据采集工作台
-          <small>巨潮资讯 · A 股财报</small>
+      <header className="topbar">
+        <div className="topbar-brand">
+          <span className="logo-crop">
+            <img src="/juanerai-logo-slogan.png" alt="" />
+          </span>
+          <span className="brand-text">
+            <span className="name">JuanerAI</span>
+            <br />
+            <span className="slogan">持续做出更好的决策</span>
+          </span>
+          <span className="topbar-sep" />
+          <span className="topbar-product">数据采集工作台</span>
         </div>
+        <nav className="topbar-switch switch" aria-label="视图切换">
+          <button className={onTasksView ? 'active' : ''} onClick={() => go('#/')}>
+            采集任务
+          </button>
+          <button className={onFilesView ? 'active' : ''} onClick={() => go('#/files')}>
+            数据文件
+          </button>
+        </nav>
+        <div className="topbar-actions">
+          <span className="chip chip-accent">
+            <span className="dot dot-ok" />
+            本机运行 · 数据不出本机
+          </span>
+        </div>
+      </header>
+
+      <aside className="sidebar">
         <button className="btn btn-primary new-btn" onClick={() => go('#/new')}>
           ＋ 新建采集任务
         </button>
-        <div style={{ padding: '0 14px 10px', display: 'flex', gap: 6 }}>
-          <button
-            className={`btn btn-sm ${hash === '#/' || hash === '' ? 'btn-secondary' : 'btn-ghost'}`}
-            onClick={() => go('#/')}
-          >
-            采集任务
-          </button>
-          <button className={`btn btn-sm ${hash === '#/files' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => go('#/files')}>
-            数据文件
-          </button>
-        </div>
         <div className="sidebar-list">
           {running.length > 0 && <div className="sidebar-group">进行中</div>}
           {running.map(sidebarItem)}
@@ -175,6 +192,7 @@ export function App() {
 
       <footer className="statusbar">
         <span>本机运行 · 127.0.0.1</span>
+        <span>{activeTask ? `当前：${activeTask.title}` : onFilesView ? '视图：数据文件' : '视图：采集任务'}</span>
         <span>运行中 {tasks.filter((t) => t.status === 'running').length} · 排队 {tasks.filter((t) => t.status === 'queued').length}</span>
         <span>数据仅保存在本机 data/ 目录</span>
       </footer>
