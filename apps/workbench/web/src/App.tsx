@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from './api';
+import logoUrl from './assets/logo.png';
 import { STATUS_LABELS, type TaskRecord } from '../../shared/task';
 import { StatusChip } from './components/StatusChip';
 import { FilesView } from './views/FilesView';
@@ -99,7 +100,7 @@ export function App() {
       <header className="topbar">
         <div className="topbar-brand">
           <span className="logo-crop">
-            <img src="/juanerai-logo-slogan.png" alt="" />
+            <img src={logoUrl} alt="JuanerAI" />
           </span>
           <span className="brand-text">
             <span className="name">JuanerAI</span>
@@ -134,6 +135,12 @@ export function App() {
           {running.map(sidebarItem)}
           {history.length > 0 && <div className="sidebar-group">历史</div>}
           {history.slice(0, 30).map(sidebarItem)}
+          {tasks.length === 0 && (
+            <div className="sidebar-empty">
+              <p className="sidebar-empty-title">暂无任务</p>
+              <p className="sidebar-empty-hint">点击上方新建首个采集任务</p>
+            </div>
+          )}
         </div>
         <div className="sidebar-foot">本机运行 · 数据仅保存在本机 data/ 目录，不上传</div>
       </aside>

@@ -21,9 +21,10 @@ await queue.init();
 
 const app = buildApp({ queue, stocks: new StockDirectory() });
 
-// 前端为 hash 路由，只需托管 / 与 /assets/**
-app.get('/', serveStatic({ path: path.join(distDir, 'index.html') }));
-app.use('/assets/*', serveStatic({ root: distDir }));
+// 前端为 hash 路由：托管 web/dist 下所有静态资源与构建产物，兜底 index.html
+const staticRoot = path.relative(process.cwd(), distDir);
+app.use('/*', serveStatic({ root: staticRoot }));
+app.get('*', serveStatic({ path: path.join(distDir, 'index.html') }));
 
 const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port }, (info) => {
   console.log(`数据采集工作台：http://127.0.0.1:${info.port}（仅本机访问，数据保存在本机 data/ 目录）`);

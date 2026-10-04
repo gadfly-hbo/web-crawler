@@ -53,7 +53,7 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
   return (
     <div className="view">
       <h1 className="page-title">新建采集任务</h1>
-      <p className="view-desc">从巨潮资讯网采集 A 股财报 PDF。先预览数量确认范围，再正式开始。</p>
+      <p className="view-desc">从巨潮资讯网批量采集 A 股上市公司定期财报（年报 / 半年报 / 季报 PDF 原件）。先预览数量确认范围，再正式开始。</p>
       <StageBar stage={state.stage} />
 
       {state.errors.length > 0 && (
@@ -67,8 +67,11 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
       )}
 
       <div className="card">
-        <h3 className="card-h">数据源</h3>
-        <span className="chip chip-accent">巨潮资讯网 · A 股定期财报（证监会指定披露平台）</span>
+        <h3 className="card-h">当前数据源</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="chip chip-accent">巨潮资讯网 · A 股上市公司定期财报</span>
+          <span className="small">法定信息披露平台，仅采集上市公司的官方年报/中报/季报原件</span>
+        </div>
       </div>
 
       {state.stage === 1 ? (

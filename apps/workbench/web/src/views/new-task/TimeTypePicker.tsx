@@ -56,6 +56,7 @@ export function TimeTypePicker(props: {
           <label htmlFor="f-year">报告期年份</label>
           <input
             id="f-year"
+            className="input-short"
             type="number"
             value={year}
             min={1990}
@@ -68,11 +69,11 @@ export function TimeTypePicker(props: {
         <div className="fld-row">
           <div className="fld">
             <label htmlFor="f-from">公告开始日期</label>
-            <input id="f-from" type="date" value={from} onChange={(e) => onFromChange(e.target.value)} />
+            <input id="f-from" className="input-short" type="date" value={from} onChange={(e) => onFromChange(e.target.value)} />
           </div>
           <div className="fld">
             <label htmlFor="f-to">公告结束日期</label>
-            <input id="f-to" type="date" value={to} onChange={(e) => onToChange(e.target.value)} />
+            <input id="f-to" className="input-short" type="date" value={to} onChange={(e) => onToChange(e.target.value)} />
           </div>
         </div>
       )}
@@ -98,6 +99,7 @@ export function TimeTypePicker(props: {
             <label htmlFor="f-sleep">请求间隔（毫秒）</label>
             <input
               id="f-sleep"
+              className="input-short"
               type="number"
               value={sleepMs}
               min={MIN_SLEEP_MS}
@@ -109,6 +111,7 @@ export function TimeTypePicker(props: {
             <label htmlFor="f-limit">最多公司数（可选）</label>
             <input
               id="f-limit"
+              className="input-short"
               type="number"
               value={limitText}
               min={1}

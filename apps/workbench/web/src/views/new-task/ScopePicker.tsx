@@ -68,17 +68,17 @@ export function ScopePicker(props: {
       <div className="fld">
         <div className="radio-row">
           <label>
-            <input type="radio" checked={mode === 'company'} onChange={() => onModeChange('company')} /> 按公司
+            <input type="radio" checked={mode === 'company'} onChange={() => onModeChange('company')} /> 指定上市公司（代码 / 名称 / 拼音）
           </label>
           <label>
-            <input type="radio" checked={mode === 'industry'} onChange={() => onModeChange('industry')} /> 按行业门类
+            <input type="radio" checked={mode === 'industry'} onChange={() => onModeChange('industry')} /> 按行业批量采集（证监会行业门类）
           </label>
         </div>
       </div>
 
       {mode === 'company' ? (
         <div className="fld">
-          <label>公司（可多家）</label>
+          <label>目标公司（支持添加多家）</label>
           <div className="chips">
             {companies.map((c) => (
               <span key={c.code} className="chip chip-accent">
@@ -96,6 +96,7 @@ export function ScopePicker(props: {
           <div className="suggest">
             <input
               type="text"
+              className="input-medium"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               placeholder="输入公司名称、6 位代码或拼音搜索"
@@ -141,6 +142,7 @@ export function ScopePicker(props: {
             ))}
           </div>
           <select
+            className="input-medium"
             value=""
             onChange={(e) => {
               if (e.target.value) onAddIndustry(e.target.value);
@@ -153,7 +155,7 @@ export function ScopePicker(props: {
               </option>
             ))}
           </select>
-          <div className="hint">行业采集是该门类全量公司，数量可能很大——建议先预览。</div>
+          <div className="hint">注：此模式用于批量采集所选行业门类下全部 A 股上市公司的官方定期财报，非券商行业研报；涉及公司较多时建议先点「预览数量」。</div>
         </div>
       )}
     </div>
