@@ -24,9 +24,13 @@ fi
 # 依赖始终对齐 lockfile（跨机同步代码后依赖可能已变化；pnpm 无变更时秒级跳过）
 pnpm install
 
-if [ ! -f apps/workbench/web/dist/index.html ]; then
-  echo "[首次运行] 构建工作台界面…"
+# 代码更新后自动重建:记录上次构建对应的代码提交(只看前端源码与包清单);
+# 标记文件放 apps/workbench/web/dist/(已 gitignore),机器各自维护
+BUILD_HEAD="$(git log -1 --format=%H -- apps/workbench/web apps/workbench/package.json 2>/dev/null || echo none)"
+if [ ! -f apps/workbench/web/dist/index.html ] || [ "$(cat apps/workbench/web/dist/.build-head 2>/dev/null)" != "$BUILD_HEAD" ]; then
+  echo "[构建] 界面代码有更新(或首次),构建工作台界面…"
   pnpm --filter workbench build
+  echo "$BUILD_HEAD" > apps/workbench/web/dist/.build-head
 fi
 
 PORT="${PORT:-4180}"
@@ -34,7 +38,7 @@ SERVER_PID=""
 
 # 已有一个实例在运行时，直接打开浏览器（避免重复起服务撞端口）
 if curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/api/health"; then
-  echo "[提示] 工作台已在运行，直接打开浏览器。"
+  echo "[提示] 工作台已在运行，直接打开浏览器(复用旧实例;若刚更新过代码请先关闭旧实例再重跑本启动器)。"
   open "http://127.0.0.1:$PORT"
   exit 0
 fi
@@ -56,7 +60,7 @@ done
 if ! kill -0 "$SERVER_PID" 2>/dev/null; then
   # 服务进程没起来：多半是已有一个实例在运行
   if curl -s -o /dev/null "http://127.0.0.1:$PORT/api/health"; then
-    echo "[提示] 工作台已在运行，直接打开浏览器。"
+    echo "[提示] 工作台已在运行，直接打开浏览器(复用旧实例;若刚更新过代码请先关闭旧实例再重跑本启动器)。"
     SERVER_PID=""
     open "http://127.0.0.1:$PORT"
     exit 0
