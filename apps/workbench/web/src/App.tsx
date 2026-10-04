@@ -167,23 +167,38 @@ export function App() {
         <aside className="inspector">
           <h3 className="card-h">采集条件</h3>
           <p className="small">
-            {activeTask.params.companies.length > 0 && <>公司：{activeTask.params.companies.join('、')}<br /></>}
-            {activeTask.params.industries.length > 0 && <>行业：{activeTask.params.industries.join('、')}<br /></>}
-            时间：
-            {activeTask.params.year != null
-              ? `报告期 ${activeTask.params.year} 年`
-              : `公告日 ${activeTask.params.from} ~ ${activeTask.params.to}`}
-            <br />
-            请求间隔：{activeTask.params.sleepMs}ms
-            {activeTask.params.limit != null && (
+            {activeTask.params.sourceType === 'api-connector' ? (
               <>
+                接口：{activeTask.params.request.method} {activeTask.params.request.url}<br />
+                分页：第 {activeTask.params.pagination.startPage} 页起，最多 {activeTask.params.pagination.maxPages} 页<br />
+                列表路径：{activeTask.params.extraction.listPath}<br />
+                请求间隔：{activeTask.params.sleepMs}ms
+              </>
+            ) : (
+              <>
+                {activeTask.params.companies.length > 0 && <>公司：{activeTask.params.companies.join('、')}<br /></>}
+                {activeTask.params.industries.length > 0 && <>行业：{activeTask.params.industries.join('、')}<br /></>}
+                时间：
+                {activeTask.params.year != null
+                  ? `报告期 ${activeTask.params.year} 年`
+                  : `公告日 ${activeTask.params.from} ~ ${activeTask.params.to}`}
                 <br />
-                最多公司数：{activeTask.params.limit}
+                请求间隔：{activeTask.params.sleepMs}ms
+                {activeTask.params.limit != null && (
+                  <>
+                    <br />
+                    最多公司数：{activeTask.params.limit}
+                  </>
+                )}
               </>
             )}
           </p>
           <h3 className="card-h">边界声明</h3>
-          <p className="small">数据来自巨潮资讯网公开公告，仅保存在本机 data/ 目录，不上传任何服务器。</p>
+          <p className="small">
+            {activeTask.params.sourceType === 'api-connector'
+              ? '数据来自自定义 API 接口，仅保存在本机 data/ 目录，不上传任何服务器。'
+              : '数据来自巨潮资讯网公开公告，仅保存在本机 data/ 目录，不上传任何服务器。'}
+          </p>
         </aside>
       )}
 

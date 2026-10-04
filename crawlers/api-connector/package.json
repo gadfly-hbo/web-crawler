@@ -1,0 +1,24 @@
+{
+  "name": "api-connector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "通用声明式 API 数据采集引擎",
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./domain": "./src/domain/index.ts",
+    "./engine": "./src/engine.ts",
+    "./events": "./src/events.ts",
+    "./json-path": "./src/json-path.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

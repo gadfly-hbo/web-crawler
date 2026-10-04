@@ -1,17 +1,62 @@
 /** 采集任务生命周期与详情路由。 */
 import { Hono } from 'hono';
+import { DEFAULT_SLEEP_MS, listIndustries, type ReportType } from 'cninfo-reports/domain';
 import {
-  DEFAULT_SLEEP_MS,
-  listIndustries,
   validateTaskParams,
-  type ReportType,
+  type ApiConnectorParams,
+  type CninfoTaskParams,
   type TaskParams,
-} from 'cninfo-reports/domain';
+} from '../../shared/task-params.js';
 import type { AppDeps } from '../types.js';
 
-/** 把不信任的 JSON 输入规整为 TaskParams（未知字段丢弃，类型不对的给空默认）。 */
+/** 把不信任的 JSON 输入规整为多态 TaskParams（未知字段丢弃，类型不对的给默认值）。 */
 function normalizeParams(raw: unknown): TaskParams {
   const obj = (raw ?? {}) as Record<string, unknown>;
+  const sourceType = (obj.sourceType as string) ?? 'cninfo';
+
+  if (sourceType === 'api-connector') {
+    const req = (obj.request ?? {}) as Record<string, unknown>;
+    const pag = (obj.pagination ?? {}) as Record<string, unknown>;
+    const ext = (obj.extraction ?? {}) as Record<string, unknown>;
+    const headersRaw = req.headers as Record<string, unknown> | undefined;
+    const headers: Record<string, string> | undefined = headersRaw
+      ? Object.fromEntries(
+          Object.entries(headersRaw)
+            .filter(([, v]) => typeof v === 'string')
+            .map(([k, v]) => [k, String(v)]),
+        )
+      : undefined;
+
+    return {
+      sourceType: 'api-connector',
+      name: typeof obj.name === 'string' ? obj.name.trim() : '',
+      request: {
+        url: typeof req.url === 'string' ? req.url.trim() : '',
+        method: req.method === 'POST' ? 'POST' : 'GET',
+        headers,
+        bodyTemplate: typeof req.bodyTemplate === 'string' ? req.bodyTemplate : undefined,
+      },
+      pagination: {
+        type: pag.type === 'cursor' ? 'cursor' : 'page_number',
+        pageParam: typeof pag.pageParam === 'string' ? pag.pageParam.trim() : 'page',
+        pageSizeParam: typeof pag.pageSizeParam === 'string' ? pag.pageSizeParam.trim() : undefined,
+        startPage: typeof pag.startPage === 'number' ? pag.startPage : 1,
+        pageSize: typeof pag.pageSize === 'number' ? pag.pageSize : 20,
+        maxPages: typeof pag.maxPages === 'number' ? pag.maxPages : undefined,
+        hasMorePath: typeof pag.hasMorePath === 'string' ? pag.hasMorePath.trim() : undefined,
+        totalPath: typeof pag.totalPath === 'string' ? pag.totalPath.trim() : undefined,
+      },
+      extraction: {
+        listPath: typeof ext.listPath === 'string' ? ext.listPath.trim() : '',
+        titlePath: typeof ext.titlePath === 'string' ? ext.titlePath.trim() : '',
+        itemKeyPath: typeof ext.itemKeyPath === 'string' ? ext.itemKeyPath.trim() : undefined,
+        downloadUrlPath: typeof ext.downloadUrlPath === 'string' ? ext.downloadUrlPath.trim() : undefined,
+        datePath: typeof ext.datePath === 'string' ? ext.datePath.trim() : undefined,
+      },
+      sleepMs: typeof obj.sleepMs === 'number' ? obj.sleepMs : 1000,
+    };
+  }
+
   const strArr = (v: unknown): string[] =>
     Array.isArray(v)
       ? v
@@ -21,6 +66,7 @@ function normalizeParams(raw: unknown): TaskParams {
       : [];
   const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
   return {
+    sourceType: 'cninfo',
     companies: strArr(obj.companies),
     industries: strArr(obj.industries),
     year: num(obj.year),

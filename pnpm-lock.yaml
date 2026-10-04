@@ -171,6 +171,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.7
         version: 1.19.17(hono@4.13.9)
+      api-connector:
+        specifier: workspace:*
+        version: link:../../crawlers/api-connector
       cninfo-reports:
         specifier: workspace:*
         version: link:../../crawlers/cninfo-reports
@@ -205,6 +208,18 @@ importers:
       vite:
         specifier: ^7.3.1
         version: 7.3.6(@types/node@26.6.2)(tsx@4.23.15)
+
+  crawlers/api-connector:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   crawlers/cninfo-reports:
     devDependencies:

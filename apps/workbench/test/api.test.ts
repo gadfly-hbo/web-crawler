@@ -134,3 +134,71 @@ test('GET /api/meta/stocks 源站不可达且无缓存时返回 503 中文提示
     { stockServer: 'down' },
   );
 });
+
+test('POST /api/tasks：合法 API Connector 参数创建成功，隔离 outDir 且状态为 queued', async () => {
+  await withApp(async (app) => {
+    const apiPayload = {
+      sourceType: 'api-connector',
+      name: '测试研报API',
+      request: {
+        url: 'https://api.example.com/reports?page={{page}}',
+        method: 'GET',
+      },
+      pagination: {
+        type: 'page_number',
+        pageParam: 'page',
+        startPage: 1,
+        pageSize: 20,
+        maxPages: 5,
+      },
+      extraction: {
+        listPath: 'data.items',
+        titlePath: 'title',
+        downloadUrlPath: 'pdfUrl',
+      },
+      sleepMs: 500,
+    };
+    const created = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: apiPayload, dryRun: false }),
+    });
+    assert.equal(created.status, 201);
+    const task = await j(created);
+    assert.equal(task.title, 'API采集 · 测试研报API');
+    assert.equal(task.params.sourceType, 'api-connector');
+    assert.equal(task.params.name, '测试研报API');
+    assert.ok(['queued', 'running', 'succeeded'].includes(task.status));
+    assert.ok(task.outDir.includes('api-connector'), `outDir 应包含 api-connector: ${task.outDir}`);
+
+    const detail = await app.request(`/api/task/${task.id}`);
+    assert.equal(detail.status, 200);
+    const detailTask = await j(detail);
+    assert.equal(detailTask.params.request.url, 'https://api.example.com/reports?page={{page}}');
+  });
+});
+
+test('POST /api/tasks：非法 API Connector 参数返回 400 与对应中文错误', async () => {
+  await withApp(async (app) => {
+    const invalidPayload = {
+      sourceType: 'api-connector',
+      name: '',
+      request: { url: '', method: 'GET' },
+      pagination: { startPage: -1, pageSize: 0 },
+      extraction: { listPath: '', titlePath: '' },
+      sleepMs: 50,
+    };
+    const res = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: invalidPayload, dryRun: false }),
+    });
+    assert.equal(res.status, 400);
+    const body = await j(res);
+    assert.ok(body.errors.some((e: string) => e.includes('必须提供接口任务名称')));
+    assert.ok(body.errors.some((e: string) => e.includes('必须提供请求 URL')));
+    assert.ok(body.errors.some((e: string) => e.includes('起始页码应为非负整数')));
+    assert.ok(body.errors.some((e: string) => e.includes('请求间隔不能低于')));
+  });
+});
+

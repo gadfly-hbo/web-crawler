@@ -1,110 +1,53 @@
-# Code Review Report (Cycle 2 Final): web-crawler 架构重构与缺陷修复
+# 评审报告（第 2 轮）
 
-- **Target Repository**: `/Users/huangbo/Dev/Projects/web-crawler`
-- **Fixed Point**: `207e956c297e6ab27c8e6fda840fc1a1eee660c2`
-- **Overall Verdict**: **PASS** (Standards Axis: PASS, 0 findings; Spec Axis: PASS, 0 findings)
-
----
-
-## 1. Verify Command Re-run Evidence
-
-- **Command**: `pnpm test && pnpm typecheck && pnpm build`
-- **Working Directory**: `/Users/huangbo/Dev/Projects/web-crawler`
-- **Exit Code**: `0`
-- **Output Evidence**:
-  - `crawlers/cninfo-reports`: 13 passed, 0 failed
-  - `apps/workbench`: 55 passed, 0 failed
-  - Total: **68 tests pass, 0 fail**
-  - `pnpm -r run typecheck`: **0 errors**
-  - `pnpm -r --filter workbench build`: **succeeded in 634ms** (`dist/` generated)
-- **Match Status**: 完全匹配记录证据（0 差异）。
+**基线提交**: `fe1f933839f0007b069a14e590f870a0a84e6ddb`  
+**结论**: **PASS** (0 阻塞项，0 非阻塞项)
 
 ---
 
-## 2. Recheck of Previous Findings
+## 1. 验证命令复核 (Verify Evidence)
 
-### [Resolved] P1: 失败清单与日志格式化丢失报告标题，且单测夹具掩盖缺陷
-- **Check Evidence**:
-  1. `apps/workbench/shared/log-format.ts` (第 16–21 行):
-     ```ts
-     const label = `${ev.name ?? ''} ${ev.title ?? ''}`.trim();
-     if (ev.status === 'downloaded') return `↓ 已下载 ${label}${ev.bytes != null ? `（${fmtBytes(ev.bytes)}）` : ''}`;
-     if (ev.status === 'skipped') return `＝ 已存在，跳过 ${label}`;
-     return `✗ 下载失败 ${label}：${ev.reason ?? '未知原因'}`;
-     ```
-     失败分支现使用包含公司名与报告标题的 `label`，完整保留了报告标题。
-  2. `apps/workbench/web/src/components/FailureList.tsx` (第 16–23 行):
-     ```tsx
-     const itemDesc = f.target
-       ? `检索「${f.target}」`
-       : [f.code, f.name, f.title].filter(Boolean).join(' ');
-     return <li key={i}>{itemDesc}：{f.reason}</li>;
-     ```
-     渲染时通过 `[f.code, f.name, f.title].filter(Boolean).join(' ')` 清晰展示失败报告的标题。
-  3. `apps/workbench/test/log-format.test.ts` (第 28–31 行):
-     已补充带有 `title` 的测试用例：
-     ```ts
-     assert.equal(
-       formatLogLine(JSON.stringify({ type: 'file', status: 'failed', name: '平安银行', title: '2024年年度报告', reason: '连接超时' })),
-       '✗ 下载失败 平安银行 2024年年度报告：连接超时',
-     );
-     ```
-  4. `apps/workbench/server/reducer.ts` 与 `apps/workbench/test/reducer.test.ts`:
-     `applyEvent` 正确将 `ev.title` 存入 `failures`，单测中已覆盖该属性断言。
-- **Status**: **PASS**
-
-### [Resolved] S1: 校验规则与常量重复 (Duplicated Code)
-- **Check Evidence**:
-  1. `crawlers/cninfo-reports/src/cli.ts` (第 2–5 行):
-     ```ts
-     import { MIN_SLEEP_MS, type ReportType } from './domain/types.js';
-     import { DATE_RE } from './domain/validation.js';
-     export type { ReportType } from './domain/types.js';
-     ```
-  2. `crawlers/cninfo-reports/src/cli.ts` (第 158–164 行):
-     消除了本地重复声明的 `DATE_RE` 与硬编码 `200`，直接使用 `MIN_SLEEP_MS` 与 `DATE_RE`。
-- **Status**: **PASS**
-
-### [Resolved] S2: 流程引擎参数耦合 CLI 专属标记 (Speculative Generality / Data Clumps)
-- **Check Evidence**:
-  1. `crawlers/cninfo-reports/src/engine.ts` (第 132–134 行):
-     ```ts
-     export type EngineOptions = Omit<CliOptions, 'json' | 'help'>;
-
-     export async function run(opts: EngineOptions, reporter: Reporter): Promise<CrawlSummary>
-     ```
-     `engine.ts` 显式解耦 CLI 专属字段 `json` 与 `help`，仅消费引擎所需参数契约。
-- **Status**: **PASS**
+- **执行命令**: `pnpm test && pnpm typecheck && pnpm build`
+- **执行目录**: `/Users/huangbo/Dev/Projects/web-crawler`
+- **退出码**: `0`
+- **验证结果**:
+  - `pnpm test`: **92 tests pass, 0 fail**（`cninfo-reports`: 13 pass；`api-connector`: 16 pass；`workbench`: 63 pass）
+  - `pnpm typecheck`: 0 错误（3 个 workspace package 均通过）
+  - `pnpm build`: Vite 构建成功完成（打包耗时 ~797ms）
+- **与记录证据吻合度**: 100% 严格一致，无任何偏差。
 
 ---
 
-## 3. Standards Axis
+## 2. 第 1 轮 6 项问题复检结果
 
-- **Documented Repo Standards & Global Conventions**:
-  - TypeScript ESM 模块语法与 `.js` 扩展名对齐无误。
-  - Monorepo 依赖声明规范：`apps/workbench` 正确通过 `"cninfo-reports": "workspace:*"` 引入，跨包相对路径 `../../../crawlers/` 扫描为 0。
-  - 前端循环依赖：经 `npx madge --circular --extensions ts,tsx apps/workbench/web/src` 检查，确认为 **0 循环依赖**。
-  - 组件职责分离：公共组件 `StatusChip` 与 `FailureList` 已收敛至 `components/`，`NewTask.tsx` 主入口收敛为 117 行（符合 ≤ 150 行要求）。
-  - 后端路由架构：`app.ts` 单文件精简至 24 行，路由模块清晰拆解至 `routes/`。
-- **Baseline Smell Check (Fowler)**: 0 findings.
-
----
-
-## 4. Spec Axis
-
-- 全部 7 项可靠性缺陷修复（B1~B7）经代码与单测双重验证。
-- 爬虫领域契约（exports `./domain`, `./events`）统一，跨包相对路径彻底消除。
-- 核心引擎解耦，默认人读文本快照测试逐字节 100% 对齐。
-- 后端 Reducer 纯函数抽取，路由模块化。
-- 前端状态机 `useReducer` 重构，0 环依赖，主文件精简至 117 行。
-
-**Spec Findings**: 0 findings.
+| 序号 | 类别 | 问题项 | 复检证据与结论 | 状态 |
+| :--- | :--- | :--- | :--- | :--- |
+| **S1** | Standards | 缺失 [`crawlers/api-connector/README.md`](file:///Users/huangbo/Dev/Projects/web-crawler/crawlers/api-connector/README.md) | 文件已创建且内容完整，详尽涵盖特性、配置说明、CLI 使用方式、NDJSON 事件流及落盘规范 | **PASS** |
+| **S2** | Standards | 根目录 [`README.md`](file:///Users/huangbo/Dev/Projects/web-crawler/README.md) 爬虫清单未同步 | 根目录 `README.md:27` 爬虫清单表已包含 `crawlers/api-connector` 及其功能说明 | **PASS** |
+| **S3** | Standards | 残留死代码 `validation.ts` 与 `types.ts` | 根目录下两文件已彻底删除，[`src/cli.ts`](file:///Users/huangbo/Dev/Projects/web-crawler/crawlers/api-connector/src/cli.ts) 与 [`src/engine.ts`](file:///Users/huangbo/Dev/Projects/web-crawler/crawlers/api-connector/src/engine.ts) 统一从 `src/domain/` 导入类型与校验，无重复代码 | **PASS** |
+| **P1** | Spec | 任务创建路由丢弃 `ApiConnectorParams` 导致 400 | [`apps/workbench/server/routes/tasks.ts`](file:///Users/huangbo/Dev/Projects/web-crawler/apps/workbench/server/routes/tasks.ts#L17-L58) 实现 `normalizeParams` 多态规整，接入 `validateTaskParams`，合法请求正确返回 201 | **PASS** |
+| **P2** | Spec | 缺少创建 API 任务的 E2E 路由测试 | [`apps/workbench/test/api.test.ts`](file:///Users/huangbo/Dev/Projects/web-crawler/apps/workbench/test/api.test.ts#L138-L203) 包含 API Connector 任务合法创建（201）与非法参数拒绝（400 校验错误）的完备集成测试 | **PASS** |
+| **P3** | Spec | TaskQueue 产出目录未隔离 | [`apps/workbench/server/queue.ts:90-94`](file:///Users/huangbo/Dev/Projects/web-crawler/apps/workbench/server/queue.ts#L90-L94) 按 `sourceType` 隔离至 `data/api-connector/<id>` vs `data/cninfo-reports/<id>` | **PASS** |
 
 ---
 
-## 5. Summary
+## 3. 全量 Diff 双轴审查
 
-- **Total findings per axis**:
-  - **Standards**: 0 findings
-  - **Spec**: 0 findings
-- **Verdict**: **PASS**
+### Standards 规范轴
+- 符合仓库 TypeScript 规范，无 `any` 滥用，无未捕获异常。
+- 架构无异味，公共参数与校验统一收敛于领域包与共享层。
+- 无死代码与投机抽象，所有代码均有直接测试与业务调用。
+- **Standards 轴发现**: 0 项。
+
+### Spec 需求轴
+- 需求契约（US1–US5）均 100% 落实且有测试守护。
+- 存量历史任务缺省 `sourceType` 自动回退为 `cninfo`，向后兼容性 100% 保持。
+- 范围控制严格，无未授权设计蔓延。
+- **Spec 轴发现**: 0 项。
+
+---
+
+## 4. 总结
+- **Standards 轴**: 0 项问题
+- **Spec 轴**: 0 项问题
+- **总体结论**: **PASS**

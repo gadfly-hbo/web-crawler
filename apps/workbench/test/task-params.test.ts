@@ -8,12 +8,13 @@ import {
   paramsToCliArgs,
   summarizeTask,
   validateTaskParams,
+  type CninfoTaskParams,
   type TaskParams,
 } from '../shared/task-params.js';
 
 const INDUSTRIES = ['金融业', '制造业'] as const;
 
-function base(): TaskParams {
+function base(): CninfoTaskParams {
   return {
     companies: ['平安银行'],
     industries: [],

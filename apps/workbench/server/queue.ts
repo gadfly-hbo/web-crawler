@@ -87,7 +87,11 @@ export class TaskQueue {
       companyIndex: 0,
       counts: { downloaded: 0, skipped: 0, failed: 0, matched: 0 },
       failures: [],
-      outDir: path.join(this.dataRoot, 'cninfo-reports', id),
+      outDir: path.join(
+        this.dataRoot,
+        (params.sourceType ?? 'cninfo') === 'api-connector' ? 'api-connector' : 'cninfo-reports',
+        id,
+      ),
       logFile: path.join(this.logsDir, `${id}.ndjson`),
     };
     this.tasks.set(id, task);

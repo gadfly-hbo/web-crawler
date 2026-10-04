@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-import { paramsToCliArgs } from '../shared/task-params.js';
+import { paramsToCliArgs, type CninfoTaskParams, type TaskParams } from '../shared/task-params.js';
 import type { Runner } from './queue.js';
 
 export interface SpawnSpec {
@@ -75,14 +75,63 @@ export function spawnRunner(spec: SpawnSpec, opts: { killGraceMs?: number } = {}
   };
 }
 
-/** 生产 Runner：以 tsx 跑 cninfo-reports 爬虫（--json），任务输出隔离到 task.outDir。 */
-export function makeCrawlerRunner(opts: { repoRoot: string }): Runner {
-  const crawlerDir = path.join(opts.repoRoot, 'crawlers', 'cninfo-reports');
-  const entry = path.join(crawlerDir, 'src', 'main.ts');
-  return (task, emit) =>
-    spawnRunner({
+/**
+ * 根据任务参数多态类型构建子进程运行规范。
+ */
+export function buildCrawlerSpawnSpec(
+  task: { params: TaskParams; dryRun: boolean; outDir: string },
+  repoRoot: string,
+): SpawnSpec {
+  const sourceType = task.params.sourceType ?? 'cninfo';
+
+  if (sourceType === 'cninfo') {
+    const crawlerDir = path.join(repoRoot, 'crawlers', 'cninfo-reports');
+    const entry = path.join(crawlerDir, 'src', 'main.ts');
+    return {
       command: process.execPath,
-      args: ['--import', 'tsx', entry, '--json', ...paramsToCliArgs(task.params, task.dryRun), '-o', task.outDir],
+      args: [
+        '--import',
+        'tsx',
+        entry,
+        '--json',
+        ...paramsToCliArgs(task.params as CninfoTaskParams, task.dryRun),
+        '-o',
+        task.outDir,
+      ],
       cwd: crawlerDir,
-    })(task, emit);
+    };
+  }
+
+  if (sourceType === 'api-connector') {
+    const crawlerDir = path.join(repoRoot, 'crawlers', 'api-connector');
+    const entry = path.join(crawlerDir, 'src', 'main.ts');
+    const args = [
+      '--import',
+      'tsx',
+      entry,
+      '--json',
+      '--config-json',
+      JSON.stringify(task.params),
+      '-o',
+      task.outDir,
+    ];
+    if (task.dryRun) {
+      args.push('--dry-run');
+    }
+    return {
+      command: process.execPath,
+      args,
+      cwd: crawlerDir,
+    };
+  }
+
+  throw new Error(`不支持的数据源类型: ${sourceType}`);
+}
+
+/** 生产 Runner：根据 sourceType 分发到对应爬虫子进程（--json），任务输出隔离到 task.outDir。 */
+export function makeCrawlerRunner(opts: { repoRoot: string }): Runner {
+  return (task, emit) => {
+    const spec = buildCrawlerSpawnSpec(task, opts.repoRoot);
+    return spawnRunner(spec)(task, emit);
+  };
 }
