@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from './api';
-import { STATUS_LABELS, STATUS_TONES, type TaskRecord } from '../../shared/task';
+import { STATUS_LABELS, type TaskRecord } from '../../shared/task';
+import { StatusChip } from './components/StatusChip';
 import { FilesView } from './views/FilesView';
 import { NewTask } from './views/NewTask';
 import { TaskDetail } from './views/TaskDetail';
@@ -17,17 +18,6 @@ function useHashRoute(): string {
   }, []);
   return hash;
 }
-
-function StatusChip({ status }: { status: TaskRecord['status'] }) {
-  const tone = STATUS_TONES[status];
-  return (
-    <span className={`chip chip-${tone}`}>
-      <span className={`dot dot-${tone}`} />
-      {STATUS_LABELS[status]}
-    </span>
-  );
-}
-export { StatusChip };
 
 export function App() {
   const hash = useHashRoute();

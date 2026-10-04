@@ -41,7 +41,12 @@ interface FakeCninfo {
   close: () => Promise<void>;
 }
 
-async function startFakeCninfo(): Promise<FakeCninfo> {
+interface FakeCninfoOptions {
+  onQuery?: (params: URLSearchParams, req: any, res: any) => boolean | void;
+  onDownload?: (urlPath: string, req: any, res: any) => boolean | void;
+}
+
+async function startFakeCninfo(options?: FakeCninfoOptions): Promise<FakeCninfo> {
   const server: Server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (req.method === 'GET' && url.pathname === '/new/data/szse_stock.json') {
@@ -54,6 +59,7 @@ async function startFakeCninfo(): Promise<FakeCninfo> {
       req.on('data', (c) => (body += c));
       req.on('end', () => {
         const params = new URLSearchParams(body);
+        if (options?.onQuery && options.onQuery(params, req, res)) return;
         if (params.get('trade') === '金融业') {
           // 4xx：触发不重试的查询失败路径
           res.writeHead(400).end('bad trade');
@@ -71,6 +77,7 @@ async function startFakeCninfo(): Promise<FakeCninfo> {
       return;
     }
     if (req.method === 'GET' && url.pathname.startsWith('/finalpage/')) {
+      if (options?.onDownload && options.onDownload(url.pathname, req, res)) return;
       res.writeHead(200, { 'Content-Type': 'application/pdf' });
       res.end(`%PDF-fake-${url.pathname}`);
       return;
@@ -263,3 +270,144 @@ test('--json --dry-run 输出纯 NDJSON 与 preview 事件（摘要被排除）�
     await rm(out, { recursive: true, force: true });
   }
 });
+
+test('单报告下载失败不中断同公司后续报告，失败事件携带 title 且清理 .part 文件 (B1/B2)', async () => {
+  const announcements = [
+    {
+      announcementId: 'b1',
+      secCode: '000001',
+      secName: '平安银行',
+      announcementTitle: '平安银行：2024年年度报告',
+      announcementTime: Date.UTC(2025, 2, 15),
+      adjunctUrl: 'finalpage/b1.PDF',
+    },
+    {
+      announcementId: 'b2',
+      secCode: '000001',
+      secName: '平安银行',
+      announcementTitle: '平安银行：2024年第一季度报告',
+      announcementTime: Date.UTC(2024, 3, 20),
+      adjunctUrl: 'finalpage/b2.PDF',
+    },
+  ];
+  const fake = await startFakeCninfo({
+    onQuery: (_params, _req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ announcements, totalAnnouncement: 2, hasMore: false }));
+      return true;
+    },
+    onDownload: (urlPath, _req, res) => {
+      if (urlPath.includes('b1')) {
+        res.writeHead(500).end('server error');
+        return true;
+      }
+      return false;
+    },
+  });
+  const out = await mkdtemp(path.join(tmpdir(), 'cninfo-b1b2-'));
+  try {
+    const r = await runCli(
+      ['--json', '-c', '平安银行', '--year', '2024', '-t', 'annual,q1', '-o', out, '--sleep', '200'],
+      fake.env,
+    );
+    assert.equal(r.code, 1, '有失败项时退出码为 1');
+    const fileEvents = r.events.filter((e) => e.type === 'file');
+    assert.equal(fileEvents.length, 2);
+
+    const failed = fileEvents.find((e) => e.status === 'failed');
+    assert.ok(failed, '应包含失败事件');
+    assert.equal(failed.title, '平安银行：2024年年度报告');
+    assert.equal(failed.reportType, 'annual');
+    assert.match(String(failed.reason), /500/);
+
+    const downloaded = fileEvents.find((e) => e.status === 'downloaded');
+    assert.ok(downloaded, '应包含成功下载事件（未被中断）');
+    assert.equal(downloaded.title, '平安银行：2024年第一季度报告');
+
+    // 检查磁盘目录：不存在 b1 的 pdf 或 part 文件，b2 的 pdf 正常存在
+    const companyDir = path.join(out, 'reports', '000001_平安银行');
+    const files = await readdir(companyDir);
+    assert.equal(files.some((f) => f.endsWith('.part')), false, '不应残留 .part 文件');
+    assert.equal(files.some((f) => f.includes('2024年年度报告')), false, '失败文件不应残留');
+    assert.equal(files.some((f) => f.includes('2024年第一季度报告') && f.endsWith('.pdf')), true, '成功文件应正常存在');
+  } finally {
+    await fake.close();
+    await rm(out, { recursive: true, force: true });
+  }
+});
+
+test('第 100 页 hasMore: true 时发射 queryError 并计入失败，杜绝静默截断 (B3)', async () => {
+  const fake = await startFakeCninfo({
+    onQuery: (params, _req, res) => {
+      const page = Number(params.get('pageNum'));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      // 模拟前 99 页有数据且 hasMore，第 100 页依然 hasMore: true
+      res.end(
+        JSON.stringify({
+          announcements: [
+            {
+              announcementId: `p${page}`,
+              secCode: '000001',
+              secName: '平安银行',
+              announcementTitle: `平安银行：2024年年度报告${page}`,
+              announcementTime: Date.UTC(2025, 2, 15),
+              adjunctUrl: `finalpage/p${page}.PDF`,
+            },
+          ],
+          totalAnnouncement: 3500,
+          hasMore: true,
+        }),
+      );
+      return true;
+    },
+  });
+  const out = await mkdtemp(path.join(tmpdir(), 'cninfo-trunc-'));
+  try {
+    const r = await runCli(
+      ['--json', '-c', '平安银行', '--year', '2024', '-t', 'annual', '-o', out, '--sleep', '200'],
+      fake.env,
+    );
+    assert.equal(r.code, 1);
+    const qe = r.events.find((e) => e.type === 'queryError');
+    assert.ok(qe, '必须发出 queryError');
+    assert.match(String(qe.reason), /超过巨潮翻页上限/);
+    const done = r.events.find((e) => e.type === 'done');
+    assert.equal((done?.summary as Record<string, unknown>).failed, 1);
+  } finally {
+    await fake.close();
+    await rm(out, { recursive: true, force: true });
+  }
+});
+
+test('年份模式窗口收窄（仅年报查 Y+1，仅季报查 Y，混合查 Y~Y+1）(B3)', async () => {
+  const capturedDates: string[] = [];
+  const fake = await startFakeCninfo({
+    onQuery: (params, _req, res) => {
+      capturedDates.push(params.get('seDate') ?? '');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ announcements: [], totalAnnouncement: 0, hasMore: false }));
+      return true;
+    },
+  });
+  const out = await mkdtemp(path.join(tmpdir(), 'cninfo-window-'));
+  try {
+    // 仅 annual
+    capturedDates.length = 0;
+    await runCli(['--json', '-c', '平安银行', '--year', '2024', '-t', 'annual', '-o', out, '--sleep', '200'], fake.env);
+    assert.equal(capturedDates[0], '2025-01-01~2025-12-31');
+
+    // 仅季度/中报
+    capturedDates.length = 0;
+    await runCli(['--json', '-c', '平安银行', '--year', '2024', '-t', 'q1,semi', '-o', out, '--sleep', '200'], fake.env);
+    assert.equal(capturedDates[0], '2024-01-01~2024-12-31');
+
+    // 混合
+    capturedDates.length = 0;
+    await runCli(['--json', '-c', '平安银行', '--year', '2024', '-t', 'annual,q1', '-o', out, '--sleep', '200'], fake.env);
+    assert.equal(capturedDates[0], '2024-01-01~2025-12-31');
+  } finally {
+    await fake.close();
+    await rm(out, { recursive: true, force: true });
+  }
+});
+

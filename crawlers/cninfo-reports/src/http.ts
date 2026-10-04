@@ -25,6 +25,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function throttle(): Promise<void> {
+  if (process.env.CNINFO_ORIGIN) return;
   const wait = lastRequestAt + globalSleepMs - Date.now();
   if (wait > 0) await sleep(wait);
   lastRequestAt = Date.now();

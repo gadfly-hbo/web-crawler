@@ -26,6 +26,7 @@ export interface TaskFailure {
   code?: string;
   name?: string;
   target?: string;
+  title?: string;
   reason: string;
 }
 

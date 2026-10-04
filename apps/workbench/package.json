@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.7",
+    "cninfo-reports": "workspace:*",
     "hono": "^4.10.7",
     "react": "^19.2.1",
     "react-dom": "^19.2.1"

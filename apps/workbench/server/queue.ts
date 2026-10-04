@@ -3,8 +3,10 @@ import { EventEmitter } from 'node:events';
 import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { parseCrawlEvent } from 'cninfo-reports/events';
 import { summarizeTask, type TaskParams } from '../shared/task-params.js';
-import type { TaskRecord, TaskStatus } from '../shared/task.js';
+import type { TaskFailure, TaskRecord, TaskStatus } from '../shared/task.js';
+import { applyEvent } from './reducer.js';
 
 export type { TaskCounts, TaskFailure, TaskRecord, TaskStatus } from '../shared/task.js';
 
@@ -159,66 +161,14 @@ export class TaskQueue {
     const seq = (this.logSeq.get(task.id) ?? 0) + 1;
     this.logSeq.set(task.id, seq);
     this.events.emit('log', task.id, line, seq);
-    let ev: Record<string, unknown>;
-    try {
-      ev = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      return; // 非 JSON 行只进日志，不驱动状态
+    const ev = parseCrawlEvent(line);
+    if (!ev) return; // 非 JSON 行只进日志，不驱动状态
+    const current = this.tasks.get(task.id) ?? task;
+    const next = applyEvent(current, ev);
+    if (next !== current) {
+      Object.assign(current, next);
+      this.events.emit('update', current);
     }
-    switch (ev.type) {
-      case 'start':
-        task.totalCompanies = Number(ev.totalCompanies ?? 0);
-        break;
-      case 'company':
-        task.companyIndex = Number(ev.index ?? 0);
-        task.currentCompany = String(ev.name ?? '');
-        break;
-      case 'file': {
-        if (ev.status === 'downloaded') task.counts.downloaded++;
-        else if (ev.status === 'skipped') task.counts.skipped++;
-        else if (ev.status === 'failed') {
-          task.counts.failed++;
-          task.failures.push({
-            code: ev.code != null ? String(ev.code) : undefined,
-            name: ev.name != null ? String(ev.name) : undefined,
-            reason: String(ev.reason ?? '未知原因'),
-          });
-        }
-        break;
-      }
-      case 'queryError':
-        task.counts.failed++;
-        task.failures.push({ target: String(ev.target ?? ''), reason: String(ev.reason ?? '未知原因') });
-        break;
-      case 'preview':
-        task.preview = { companies: Number(ev.companies ?? 0), reports: Number(ev.reports ?? 0) };
-        break;
-      case 'done': {
-        const summary = (ev.summary ?? {}) as Record<string, unknown>;
-        task.counts.matched = Number(summary.matched ?? 0);
-        if (task.status === 'running') task.status = this.classifyDone(task, summary);
-        task.finishedAt = new Date().toISOString();
-        break;
-      }
-      case 'error':
-        if (task.status === 'running' || task.status === 'queued') task.status = 'failed';
-        task.error = String(ev.message ?? '未知错误');
-        task.finishedAt = new Date().toISOString();
-        break;
-      default:
-        return; // 未知事件不通知，减少噪音
-    }
-    this.events.emit('update', task);
-  }
-
-  private classifyDone(task: TaskRecord, summary: Record<string, unknown>): TaskStatus {
-    const failed = Number(summary.failed ?? 0);
-    if (failed === 0) return 'succeeded';
-    // 预览任务不产文件，以匹配数判断是否有结果；采集任务以「下载+跳过」判断
-    const produced = task.dryRun
-      ? Number(summary.matched ?? 0)
-      : Number(summary.downloaded ?? 0) + Number(summary.skipped ?? 0);
-    return produced > 0 ? 'partial' : 'failed';
   }
 
   private async onProcessDone(task: TaskRecord): Promise<void> {

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { formatLogLine } from '../../../shared/log-format';
 import { STATUS_LABELS, type TaskRecord } from '../../../shared/task';
-import { StatusChip } from '../App';
+import { FailureList } from '../components/FailureList';
+import { StatusChip } from '../components/StatusChip';
 import { FileList } from './FileList';
 
 export function TaskDetail(props: {
@@ -116,18 +117,7 @@ export function TaskDetail(props: {
       {task.status === 'canceled' && (
         <div className="warn-card">任务已取消。已下载的文件保留在输出目录中；最后一份文件可能不完整。</div>
       )}
-      {task.failures.length > 0 && (
-        <div className="fail-card">
-          以下内容未能采集（{task.failures.length} 处）：
-          <ul>
-            {task.failures.map((f, i) => (
-              <li key={i}>
-                {f.target ? `检索「${f.target}」` : `${f.code ?? ''} ${f.name ?? ''}`}：{f.reason}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <FailureList failures={task.failures} />
 
       <div className="card">
         <h3 className="card-h" style={{ display: 'flex', justifyContent: 'space-between' }}>

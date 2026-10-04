@@ -26,6 +26,10 @@ test('各事件类型转人读文案', () => {
     '✗ 下载失败 平安银行：连接超时',
   );
   assert.equal(
+    formatLogLine(JSON.stringify({ type: 'file', status: 'failed', name: '平安银行', title: '2024年年度报告', reason: '连接超时' })),
+    '✗ 下载失败 平安银行 2024年年度报告：连接超时',
+  );
+  assert.equal(
     formatLogLine(JSON.stringify({ type: 'queryError', target: '金融业', reason: 'HTTP 400' })),
     '✗ 检索失败 金融业：HTTP 400',
   );

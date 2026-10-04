@@ -1,7 +1,8 @@
-/** 命令行参数解析（无第三方依赖）。 */
 import process from 'node:process';
+import { MIN_SLEEP_MS, type ReportType } from './domain/types.js';
+import { DATE_RE } from './domain/validation.js';
 
-export type ReportType = 'annual' | 'semi' | 'q1' | 'q3';
+export type { ReportType } from './domain/types.js';
 
 export interface CliOptions {
   companies: string[];
@@ -15,6 +16,7 @@ export interface CliOptions {
   dryRun: boolean;
   outDir?: string;
   json: boolean;
+  help?: boolean;
 }
 
 export const USAGE = `用法：pnpm --filter cninfo-reports start -- [选项]
@@ -43,7 +45,6 @@ export const USAGE = `用法：pnpm --filter cninfo-reports start -- [选项]
   pnpm --filter cninfo-reports start -- -c 000001 --from 2025-07-01 --to 2025-09-30 -t semi`;
 
 const VALID_TYPES = new Set(['annual', 'semi', 'q1', 'q3', 'all']);
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function parseArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
@@ -112,9 +113,8 @@ export function parseArgs(argv: string[]): CliOptions {
         break;
       case '-h':
       case '--help':
-        console.log(USAGE);
-        process.exit(0);
-        break;
+        opts.help = true;
+        return opts;
       default:
         throw new Error(`未知参数：${arg}\n\n${USAGE}`);
     }
@@ -126,6 +126,7 @@ export function parseArgs(argv: string[]): CliOptions {
 }
 
 function validate(opts: CliOptions, rawTypes: string[]): void {
+  if (opts.help) return;
   if (opts.companies.length === 0 && opts.industries.length === 0) {
     throw new Error(`必须至少指定 --company 或 --industry 之一\n\n${USAGE}`);
   }
@@ -158,8 +159,8 @@ function validate(opts: CliOptions, rawTypes: string[]): void {
   if (opts.from && !DATE_RE.test(opts.from)) throw new Error('--from 格式应为 YYYY-MM-DD');
   if (opts.to && !DATE_RE.test(opts.to)) throw new Error('--to 格式应为 YYYY-MM-DD');
   if (opts.from && opts.to && opts.from > opts.to) throw new Error('--from 不能晚于 --to');
-  if (!Number.isFinite(opts.sleepMs) || opts.sleepMs < 200) {
-    throw new Error('--sleep 不能低于 200（对目标站点保持礼貌）');
+  if (!Number.isFinite(opts.sleepMs) || opts.sleepMs < MIN_SLEEP_MS) {
+    throw new Error(`--sleep 不能低于 ${MIN_SLEEP_MS}（对目标站点保持礼貌）`);
   }
   if (opts.limit != null && (!Number.isInteger(opts.limit) || opts.limit < 1)) {
     throw new Error('--limit 应为正整数');

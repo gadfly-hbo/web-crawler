@@ -1,6 +1,6 @@
 /** 数据文件视图：按任务浏览产出文件（zip 打包 / Finder 显示 / 进详情看清单）。 */
 import type { TaskRecord } from '../../../shared/task';
-import { StatusChip } from '../App';
+import { StatusChip } from '../components/StatusChip';
 import { api } from '../api';
 
 export function FilesView(props: { tasks: TaskRecord[]; onOpen: (id: string) => void; showToast: (m: string) => void }) {

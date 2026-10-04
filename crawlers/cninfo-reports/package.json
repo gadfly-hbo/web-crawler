@@ -4,6 +4,11 @@
   "private": true,
   "description": "A 股上市公司财报下载器（巨潮资讯网）",
   "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./domain": "./src/domain/index.ts",
+    "./events": "./src/events.ts"
+  },
   "scripts": {
     "start": "tsx src/main.ts",
     "test": "tsx --test test/*.test.ts",

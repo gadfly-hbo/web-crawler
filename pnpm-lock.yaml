@@ -171,6 +171,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.7
         version: 1.19.17(hono@4.13.9)
+      cninfo-reports:
+        specifier: workspace:*
+        version: link:../../crawlers/cninfo-reports
       hono:
         specifier: ^4.10.7
         version: 4.13.9

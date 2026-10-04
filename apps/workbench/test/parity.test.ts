@@ -8,10 +8,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { listIndustries } from '../../../crawlers/cninfo-reports/src/industries.js';
+import { listIndustries } from 'cninfo-reports/domain';
 import { validateTaskParams, type TaskParams } from '../shared/task-params.js';
 
-const crawlerDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../crawlers/cninfo-reports');
+const crawlerDir = path.dirname(fileURLToPath(import.meta.resolve('cninfo-reports/package.json')));
 
 function cliRejects(argv: string[]): Promise<boolean> {
   return new Promise((resolve) => {

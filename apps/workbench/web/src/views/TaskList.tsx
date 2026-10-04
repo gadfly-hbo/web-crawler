@@ -1,6 +1,6 @@
 /** 任务列表（首页）：卡片清单 + 空状态引导。 */
 import { STATUS_LABELS, type TaskRecord } from '../../../shared/task';
-import { StatusChip } from '../App';
+import { StatusChip } from '../components/StatusChip';
 
 export function TaskList(props: { tasks: TaskRecord[]; onOpen: (id: string) => void; onNew: () => void }) {
   const { tasks, onOpen, onNew } = props;

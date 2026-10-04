@@ -1,59 +1,41 @@
-# Red-Team: 本机 Web 工作台 + 子进程串行队列，让非技术运营自助采集巨潮财报
+# Red-Team: web-crawler 架构重构与缺陷修复
 
 ## Top Kill-Assumptions (ranked)
 
-### 1. 典型任务的运行时长在运营可等待范围内
-- **Claim:** 串行队列（同时只跑一个任务）+ 1s 请求间隔下，运营点的任务能在可接受时间内跑完，排队机制不会成为抱怨源。
-- **Steelman:** 运营任务是间歇性、小批量的（某公司/某行业的某年年报）；礼貌限速本来就是合规要求，慢是应该的。
-- **Fails if:** 运营典型用法是「全市场/大行业全量年报」——制造业门类上千家公司 × 每家 4 类报告 × ≥1s/请求，单任务可能数小时，期间其他任务全部排队。
-- **Evidence to get this week:** IMPLEMENT 首个任务时用 `--dry-run` 实测一个大门类（如制造业 2024 年报）的匹配量与单公司查询耗时，估算端到端时长。
-- **Kill criterion:** 大门类任务估算 >60 分钟且无 dry-run 提示语能管理预期 → 需要「任务拆分建议（按子行业/分批）」或断点续传设计，而不是放开并行（并行违反限速约束，不可选）。
-- **Cheapest test:** 一次制造业 `--year 2024 -t annual --dry-run`，计时 + 看匹配数（零代码成本）。
+### 1. 爬虫拆分为领域/事件导出后，CLI 的纯净独立性与逐字节输出不变
+- **Claim:** 将 `crawlers/cninfo-reports` 的类型、校验与事件抽取后，CLI 本身的独立执行能力不受任何影响，且不带 `--json` 时输出逐字节一致。
+- **Steelman:** 抽取的都是纯领域数据结构与字符串/日期处理纯函数，TextReporter 完整继承原有 `log()` 逻辑，架构更清晰且更易做字符级比对。
+- **Fails if:** 拆分时误将 Node 特有依赖（fs/path/process）带入公共 domain，或 reporter 换行/缩进细节产生 1 个字符的漂移。
+- **Evidence to get this week:** 重构前先为现有 CLI 输出录制基准输出快照；重构后用快照对拍断言 0 diff。
+- **Kill criterion:** 快照比对出现任何意外字符差异，或外部直接 `tsx src/main.ts` 报解析依赖错误。
+- **Cheapest test:** 重构前写一个简单的 snapshot 测试固化当前输出。
 
-### 2. 运营的障碍是「没有界面」，而不是「看不懂该填什么」
-- **Claim:** 把 CLI 参数映射成表单（公司/行业/年份/类型）后，运营能无人陪同完成采集。
-- **Steelman:** 字段就是运营日常语言（公司名、行业门类、年份、年报/季报），还有 dry-run 预览兜底确认。
-- **Fails if:** 运营不知道「证监会行业门类」有哪些、或预期按「概念板块/指数成分」选公司——采集对象的选取模型与他们的需求模型不匹配。
-- **Evidence to get this week:** PRD 阶段把「按公司搜索补全 + 行业门类下拉（预置清单）」的交互定稿；v1 完成后让一位运营真实跑一个任务。
-- **Kill criterion:** 运营在无人陪同下无法完成「选范围→预览→开始」三步，或预览数字对他们没有确认意义 → 表单模型要改（如支持导入公司名单 Excel）。
-- **Cheapest test:** v1 交付后一次 5 分钟陪同观察（先于任何二期投入）。
+### 2. 检索时间窗口收窄不会误杀合规延迟披露的财报
+- **Claim:** 年报窗口设为 Y+1 全年、中报与季报设为 Y 全年，能大幅压降单次查询量并彻底远离 3000 条上限，同时覆盖 100% 正规财报。
+- **Steelman:** 证监会法定披露要求严格限定了报告期与发布日的关系（年报次年4月底、中报当年8月底）。给予全年余量足够吸收任何正常审批延迟。
+- **Fails if:** 极个别重组、退市或被立案调查的公司跨年补发更正前历史年报，且刚好被窗口卡死。
+- **Evidence to get this week:** 核对窗口边界，并增加硬防御：只要达到第 100 页且 `hasMore == true`，立即触发 `queryError` 事件，将未知风险转为明确披露，绝不静默丢弃。
+- **Kill criterion:** 正常 A 股公司的有效法定报告被时间窗口过滤。
+- **Cheapest test:** 本地模拟翻页到达 100 页时断言必须发出 `queryError`。
 
-### 3. `--json` 改造是加事件点，不是重写爬虫
-- **Claim:** 在 cninfo-reports 现有主循环上注入 NDJSON 事件（进度/成败/汇总）是小改，CLI 默认行为不受影响。
-- **Steelman:** main.ts 已是顺序主循环（查询→逐公司下载→汇总），事件点天然存在；console.log 集中于 log() 一处。
-- **Fails if:** 进度信息（x/N 公司、当前公司名）散落在查询/下载多层函数里，取数要穿透改动多处签名。
-- **Evidence to get this week:** IMPLEMENT 第一个切片就做 --json 改造（tracer bullet），成本立刻显形。
-- **Kill criterion:** 改造需要重写 cninfo.ts 的查询/下载核心而非在 main.ts 循环上加发射点 → 退回「工作台解析 stdout 文本」方案（降级但可用）。
-- **Cheapest test:** 读 main.ts 主循环（已在会话中确认结构：parseArgs → fetchStockList → queryAnnouncements → 逐公司 downloadAnnouncement → summary），事件点明确。
-
-### 4. React 手写组件的表单复杂度可控
-- **Claim:** 不引 UI 组件库、手写 Xanthil 规范控件，不会在新任务表单（互斥校验、多选 chip、折叠高级项）上失控。
-- **Steelman:** 互斥/校验规则已在 CLI `validate()` 里写死，前端是平移不是发明；四个视图都是常规 CRUD 界面。
-- **Fails if:** 状态联动（公司/行业二选一、年份/日期互斥、dry-run 结果回显）超出预期，裸写 useState 理不顺。
-- **Kill criterion:** 新建任务页状态逻辑超过 ~300 行仍无法收敛 → 引入轻量表单/状态库（不违反「不引 UI 组件库」约束）。
-- **Cheapest test:** TDD 实现表单校验纯函数（与 CLI validate 对齐），复杂度先在测试里显形。
-
-### 5. .command 在运营机器上「双击即可用」
-- **Claim:** 参考 deep-research 的启动脚本模式（cd → 首跑装依赖/构建 → 起服务 → 探活 → open 浏览器 → Ctrl+C 清理），在运营场景成立。
-- **Steelman:** deep-research 的同款脚本已在 Mac mini / MacBook 双机实际使用，模式已验证；本工作台外部依赖更少（无密钥注入）。
-- **Fails if:** 运营机器没装 Node/pnpm，或 4173 类端口被占，脚本静默失败、运营看不懂报错。
-- **Kill criterion:** 首跑需要 >2 步手工操作（如装 Xcode CLT、配环境变量）→ 脚本内补自检与中文引导文案，仍不行则考虑打包方案。
-- **Cheapest test:** 在本机（已装环境）与 MacBook（git-sync 后）各双击一次验证。
+### 3. 工作台依赖爬虫包在 monorepo 内能够无阻碍解析与打包
+- **Claim:** 工作台 `package.json` 添加 `"cninfo-reports": "workspace:*"`，Vite 与 TS 编译器能够无缝识别并打包。
+- **Steelman:** pnpm workspace 原生支持 `workspace:*` 跨包链接，Vite 对 monorepo 内部依赖的 TS 源码编译支持成熟。
+- **Fails if:** Vite build 或 tsx 运行时遇到 exports 条件导出（如 `import` vs `require`）解析失败或类型报错。
+- **Evidence to get this week:** P1 落地后立即运行 `pnpm --filter workbench run typecheck` 与 `pnpm --filter workbench build`。
+- **Kill criterion:** `vite build` 报错或无法解析 workspace 依赖。
+- **Cheapest test:** P1 完成后一条 `pnpm -r run typecheck && pnpm --filter workbench build`。
 
 ## What's Well-Reasoned
 
-- **数据留本机 + 仅绑 127.0.0.1**：内部工具、公开数据个人研究用途，仓库 README 已有合规声明；不开放局域网把攻击面压到零，方向正确。
-- **串行队列而非并行**：并行对同一站点的请求速率翻倍，直接违反自己对巨潮的限速承诺——约束识别正确，没有为体验牺牲合规。
-- **不引数据库、JSON 文件持久化**：任务量级（每天个位数）下 SQLite/Postgres 都是过度设计。
-- **不引 UI 组件库、按 DESIGN.md 手写**：全局规范明确要求，且四视图组件需求浅（卡片/表单/列表/日志区）。
-- **dry-run 预览确认后才开跑**：给非技术用户一个「反悔点」，与规范「失败如实披露」一致。
+- **原子落盘杜绝增量污染**：用 `.part` + rename 解决断网/取消产生的假文件问题，直接击中“增量补齐”逻辑的致命隐患。
+- **细粒度错误隔离**：单文件 try/catch 避免整家公司因单篇报告网络抖动而直接被放弃，大幅提升长时间爬取的鲁棒性。
+- **拒绝盲目抽取 packages/**：遵守当前 monorepo 约定（等 2~3 个爬虫后再建 packages/），采用 package exports 的方案 A，改动范围最小且架构自洽。
 
 ## What I Couldn't Assess
 
-- 运营真实使用频率与任务规模分布（只有上线后才知道；假设 1 的实测只能给单点数据）。
-- 巨潮接口的长期稳定性与限流阈值（已有 1s 间隔+重试，但无长期观测数据）。
-- 运营是否需要「结果数据的二次加工」（导出 Excel 汇总等）——proposal 明确排除，但若这是真实高频需求，v1 的价值会打折。
+- 巨潮源站在连续密集大门类请求下的动态频控封禁策略（已保留 1000ms 默认延迟与退避重试，不可调低）。
 
 ## Verdict: **go**
 
-无任何 kill-assumption 的 kill criterion 已被现有证据触发；最贵的两个假设（任务时长、运营自助）都有本周内近零成本的测试路径，且都安排在 v1 交付前后的自然节点上。
+所有假设均有明确防御性设计与自动化测试验证手段，无阻断性风险，立即推进至 PRD 阶段。

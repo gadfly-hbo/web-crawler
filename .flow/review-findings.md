@@ -1,20 +1,110 @@
-# REVIEW 第 3 轮（最终轮）发现（code-reviewer 子代理返回，逐字存档）
+# Code Review Report (Cycle 2 Final): web-crawler 架构重构与缺陷修复
 
-> 前两轮存档：review-findings-r1.md（10 条建议级，已全部处置）、review-findings-r2.md（处置核验 PASS + 3 条建议，本轮处置其中 2 条、1 条按建议不修）。
+- **Target Repository**: `/Users/huangbo/Dev/Projects/web-crawler`
+- **Fixed Point**: `207e956c297e6ab27c8e6fda840fc1a1eee660c2`
+- **Overall Verdict**: **PASS** (Standards Axis: PASS, 0 findings; Spec Axis: PASS, 0 findings)
 
-## 审查结论
-PASS — 第三轮增量复核：基线 d32b130 之后未提交改动中的三项处置声明全部真实落地，亲自重跑验证命令与记录证据相符（typecheck exit 0、crawler pass 6/fail 0、workbench pass 46/fail 0、build 成功 vite 7.3.6/39 模块/248.58KB）。无新问题。
+---
 
-## 处置逐项核验
-1. **queue.ts `reportDone` 收敛 — 成立，两分支行为等价。** queue.ts:133/144 均改为 `this.reportDone(next)`；reportDone(:150-154) 磁盘写失败从 unhandledRejection 降级为 console.error；两分支时序与修复前一致；queue.test「done 拒绝」用例实测通过。
-2. **NewTask.tsx 预览兜底卡 — 成立。** :378-380 canceled 单独文案；空串 join 经 `||` 正确回退「未知原因」。
-3. **parity.test.ts child 'error' 监听 — 按声明未修，一致**（command 恒为 process.execPath 不可触发，维持 seam 记录）。
+## 1. Verify Command Re-run Evidence
 
-## 阻断性问题
-无。
+- **Command**: `pnpm test && pnpm typecheck && pnpm build`
+- **Working Directory**: `/Users/huangbo/Dev/Projects/web-crawler`
+- **Exit Code**: `0`
+- **Output Evidence**:
+  - `crawlers/cninfo-reports`: 13 passed, 0 failed
+  - `apps/workbench`: 55 passed, 0 failed
+  - Total: **68 tests pass, 0 fail**
+  - `pnpm -r run typecheck`: **0 errors**
+  - `pnpm -r --filter workbench build`: **succeeded in 634ms** (`dist/` generated)
+- **Match Status**: 完全匹配记录证据（0 差异）。
 
-## 建议改进
-无新增。
+---
 
-## 待确认（UNVERIFIED，沿留）
-- EADDRINUSE 分支无自动化测试；.command 信号扩散依赖手工实测记录；resolveInside 不解析 symlink（低风险，目录只由爬虫写入）。
+## 2. Recheck of Previous Findings
+
+### [Resolved] P1: 失败清单与日志格式化丢失报告标题，且单测夹具掩盖缺陷
+- **Check Evidence**:
+  1. `apps/workbench/shared/log-format.ts` (第 16–21 行):
+     ```ts
+     const label = `${ev.name ?? ''} ${ev.title ?? ''}`.trim();
+     if (ev.status === 'downloaded') return `↓ 已下载 ${label}${ev.bytes != null ? `（${fmtBytes(ev.bytes)}）` : ''}`;
+     if (ev.status === 'skipped') return `＝ 已存在，跳过 ${label}`;
+     return `✗ 下载失败 ${label}：${ev.reason ?? '未知原因'}`;
+     ```
+     失败分支现使用包含公司名与报告标题的 `label`，完整保留了报告标题。
+  2. `apps/workbench/web/src/components/FailureList.tsx` (第 16–23 行):
+     ```tsx
+     const itemDesc = f.target
+       ? `检索「${f.target}」`
+       : [f.code, f.name, f.title].filter(Boolean).join(' ');
+     return <li key={i}>{itemDesc}：{f.reason}</li>;
+     ```
+     渲染时通过 `[f.code, f.name, f.title].filter(Boolean).join(' ')` 清晰展示失败报告的标题。
+  3. `apps/workbench/test/log-format.test.ts` (第 28–31 行):
+     已补充带有 `title` 的测试用例：
+     ```ts
+     assert.equal(
+       formatLogLine(JSON.stringify({ type: 'file', status: 'failed', name: '平安银行', title: '2024年年度报告', reason: '连接超时' })),
+       '✗ 下载失败 平安银行 2024年年度报告：连接超时',
+     );
+     ```
+  4. `apps/workbench/server/reducer.ts` 与 `apps/workbench/test/reducer.test.ts`:
+     `applyEvent` 正确将 `ev.title` 存入 `failures`，单测中已覆盖该属性断言。
+- **Status**: **PASS**
+
+### [Resolved] S1: 校验规则与常量重复 (Duplicated Code)
+- **Check Evidence**:
+  1. `crawlers/cninfo-reports/src/cli.ts` (第 2–5 行):
+     ```ts
+     import { MIN_SLEEP_MS, type ReportType } from './domain/types.js';
+     import { DATE_RE } from './domain/validation.js';
+     export type { ReportType } from './domain/types.js';
+     ```
+  2. `crawlers/cninfo-reports/src/cli.ts` (第 158–164 行):
+     消除了本地重复声明的 `DATE_RE` 与硬编码 `200`，直接使用 `MIN_SLEEP_MS` 与 `DATE_RE`。
+- **Status**: **PASS**
+
+### [Resolved] S2: 流程引擎参数耦合 CLI 专属标记 (Speculative Generality / Data Clumps)
+- **Check Evidence**:
+  1. `crawlers/cninfo-reports/src/engine.ts` (第 132–134 行):
+     ```ts
+     export type EngineOptions = Omit<CliOptions, 'json' | 'help'>;
+
+     export async function run(opts: EngineOptions, reporter: Reporter): Promise<CrawlSummary>
+     ```
+     `engine.ts` 显式解耦 CLI 专属字段 `json` 与 `help`，仅消费引擎所需参数契约。
+- **Status**: **PASS**
+
+---
+
+## 3. Standards Axis
+
+- **Documented Repo Standards & Global Conventions**:
+  - TypeScript ESM 模块语法与 `.js` 扩展名对齐无误。
+  - Monorepo 依赖声明规范：`apps/workbench` 正确通过 `"cninfo-reports": "workspace:*"` 引入，跨包相对路径 `../../../crawlers/` 扫描为 0。
+  - 前端循环依赖：经 `npx madge --circular --extensions ts,tsx apps/workbench/web/src` 检查，确认为 **0 循环依赖**。
+  - 组件职责分离：公共组件 `StatusChip` 与 `FailureList` 已收敛至 `components/`，`NewTask.tsx` 主入口收敛为 117 行（符合 ≤ 150 行要求）。
+  - 后端路由架构：`app.ts` 单文件精简至 24 行，路由模块清晰拆解至 `routes/`。
+- **Baseline Smell Check (Fowler)**: 0 findings.
+
+---
+
+## 4. Spec Axis
+
+- 全部 7 项可靠性缺陷修复（B1~B7）经代码与单测双重验证。
+- 爬虫领域契约（exports `./domain`, `./events`）统一，跨包相对路径彻底消除。
+- 核心引擎解耦，默认人读文本快照测试逐字节 100% 对齐。
+- 后端 Reducer 纯函数抽取，路由模块化。
+- 前端状态机 `useReducer` 重构，0 环依赖，主文件精简至 117 行。
+
+**Spec Findings**: 0 findings.
+
+---
+
+## 5. Summary
+
+- **Total findings per axis**:
+  - **Standards**: 0 findings
+  - **Spec**: 0 findings
+- **Verdict**: **PASS**

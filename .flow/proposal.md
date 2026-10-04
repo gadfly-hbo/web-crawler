@@ -1,50 +1,44 @@
-# Proposal：数据采集工作台（web-crawler workbench）v1 + 一键启动
+# 提案：web-crawler 架构重构与缺陷修复
 
-> 来源：2026-09-27 会话讨论稿（设计方案 + 用户确认）。后续所有阶段以本文件为最高规范源。
+> 来源：前置架构诊断、代码全量审查与讨论稿 [refactor_plan.md](file:///Users/huangbo/.gemini/antigravity-cli/brain/26ed39f9-36c3-4fa5-9f4a-18cb175bca71/refactor_plan.md)。
 
-## 背景与目标
+## 1. 核心目标
 
-web-crawler 是多爬虫 pnpm monorepo，已有 `crawlers/cninfo-reports`（巨潮 A 股财报 CLI）。目标用户是**非技术运营人群**：他们不碰命令行，需要一个浏览器里的工作台来完成数据采集操作。
+在保持既有功能与对外承诺完全不变的前提下，消除 `crawlers/cninfo-reports` 与 `apps/workbench` 之间的重复契约与架构坏味道，修复数据采集完整性与可靠性缺陷（原子写入、容错粒度、深度翻页告警等），提升系统可维护性与测试内聚性。
 
-## 已确认的决策（constraints，不可翻案）
+## 2. 硬约束
 
-1. **形态：本机运行的 Web 工作台**。不选 Electron/Tauri（太重，浏览器够用，以后想打包再套壳）；不选部署到服务器（爬虫依赖本机网络环境，数据应留本机）。
-2. **位置：仓库新增 `apps/workbench`**（pnpm workspace 新包），README 结构约定同步更新。
-3. **技术栈**：后端 Hono + Node（REST API + SSE 实时进度）；前端 Vite + React + TypeScript；**不引任何 UI 组件库**，界面严格按全局 Xanthil 规范（`~/.zcode/design/DESIGN.md`）手写，token 落成 CSS 变量。
-   - 用户语言：界面不出现「爬虫/CLI/参数」，统一「采集任务」。
-   - 失败如实披露：没抓到的公司和原因列清楚，不做假成功。
-4. **任务执行：串行队列，同一时间只跑一个采集任务**（并行会翻倍请求速率，破坏对巨潮的礼貌限速）。执行方式是 spawn 子进程跑现有爬虫。
-5. **爬虫配套小改**：`cninfo-reports` 增加 `--json` 模式输出 NDJSON 结构化事件（进度/每文件成败/汇总），CLI 默认行为不变；支持单次任务输出到 `data/cninfo-reports/<taskId>/`。
-6. **持久化**：任务元数据存 `data/workbench/tasks.json`（不入库），不引数据库。
-7. **服务仅绑 127.0.0.1**（用户确认的默认①：React；默认②：仅本机访问；以后确有共享需要再加显式开关）。
-8. **边界可见**：常驻文案「全部数据仅保存在本机 data/ 目录，不上传」。
+1. **CLI 默认输出逐字节不变**：不传 `--json` 时的命令行人类可读输出与现有格式、标点完全一致。
+2. **零功能膨胀**：纯架构重构与缺陷修复，不引入新的业务概念或未商定的外部依赖。
+3. **回归验证全绿**：既有 6 个爬虫测试、46 个工作台测试在每个重构阶段结束后必须保持全部通过，类型检查 0 错误。
+4. **共享方式**：采用方案 A（爬虫包在 `package.json` 中 exports `./domain` 与 `./events`，工作台以 `workspace:*` 引入），遵循 monorepo 当前暂不抽取 `packages/` 的既有约定。
 
-## v1 范围（本次交付）
+## 3. 范围与分阶段实施
 
-四个视图（三栏外壳：侧栏 248 / 主工作区 / Inspector 300 + 底部状态栏）：
+### P0: 核心可靠性与数据安全缺陷修复
+- **B1 原子落盘**：PDF 写入采用 `.part` 临时文件 + rename，杜绝中断、取消或崩溃产生残缺损坏文件，确保增量跳过判断安全。
+- **B2 细粒度下载容错**：异常捕获粒度从整家公司细化到单份报告；单份报告失败不终止后续报告下载，失败事件携带完整标题与原因。
+- **B3 检索窗口收窄与翻页告警**：年份模式按报告类型自动收窄公告查询窗口（年报查 Y+1，中报/季报查 Y）；翻页触及上限时输出显式 `queryError` 告警，避免静默漏抓。
+- **B4 公司标识传递**：工作台向 CLI 传递 6 位代码，消除重名或更名歧义。
+- **B5–B7 边界修复**：前端搜索防竞态、zip 下载中止清理、下载 URL 统一路由。
 
-1. **任务列表（首页）**：卡片清单（数据源、范围摘要、进度、状态 chip：排队中/运行中/已完成/部分失败/失败）；空状态给「新建第一个采集任务」。
-2. **新建采集任务**：阶段条三步「选择范围 → 预览确认 → 开始采集」。
-   - 数据源：巨潮资讯·A 股财报（唯一，做成可扩展）
-   - 采集对象：按公司（名称/代码/拼音搜索自动补全，多选 chip）或按行业门类（下拉，二选一）
-   - 时间：按报告年份（单选+年份）或按公告发布日期（起止日期），互斥，与 CLI 校验一致
-   - 报告类型：年报/中报/一季报/三季报复选，默认全选
-   - 高级折叠：请求间隔（默认 1000ms，最低 200 写死）、最多公司数
-   - 「预览数量」= `--dry-run`，显示「共匹配 N 家公司、M 份报告」，确认后才点开始
-3. **任务详情**：进度条（x/N 公司）+ 已下载/跳过/失败计数 + 实时日志（mono 滚动区）+ 文件清单（名称/大小/单文件下载）；运行中可「取消（已下载的文件会保留）」；失败/部分失败用 fail-soft 卡列失败公司与原因。
-4. **数据文件**：按任务浏览 `data/` 产物，支持「在 Finder 中显示」和打包下载 zip。
+### P1: 统一领域契约与消除重复
+- 在 `crawlers/cninfo-reports` 下抽取 `domain/`（类型、参数校验、行业门类、证券映射、分类逻辑）与 `events.ts`（强类型联合 `CrawlEvent` 及解析器）。
+- 工作台声明 `"cninfo-reports": "workspace:*"`，全量替换跨包相对路径 `../../../crawlers/cninfo-reports/...`。
+- 替换工作台中的手抄版校验，用领域模块保证单点真实。
 
-## v1 之后的补充开发（同一 flow 内，v1 完成后做）
+### P2: 爬虫核心纯函数化与解耦
+- 将 `main.ts` 庞大主循环拆解为流程引擎 `run(opts, reporter)`，只面向 `CrawlEvent` 发射事件。
+- 分离 `ndjsonReporter` 与 `textReporter`，消除全局 `jsonMode`。
+- 限速与 HTTP 客户端实例化注入，支持测试与隔离；`parseArgs` 纯函数化。
 
-**双击一键启动 `.command`**：参考 `~/DevWorkSpace/Projects/deep-research/启动深度研究.command`——`cd` 到脚本目录、首跑自动 `pnpm install` / 构建、起本机服务、探活后 `open` 浏览器、Ctrl+C 清理子进程。没有这个脚本「非技术人群可用」不成立。
+### P3: 工作台后端状态机与路由模块化
+- 抽出 `applyEvent(task, ev): TaskRecord` 纯状态迁移 reducer，单测全覆盖。
+- 将 249 行的 `app.ts` 按路由领域解耦为 `routes/meta.ts`, `routes/tasks.ts`, `routes/files.ts`, `routes/sse.ts`。
 
-## 明确排除（以后再说）
+### P4: 工作台前端解耦与状态收敛
+- 抽取独立组件，消除 `App.tsx` 与 `TaskDetail.tsx` 之间的循环依赖。
+- 重构 400 行的 `NewTask.tsx`，采用 `useReducer` 管理表单联动状态，拆分子视图。
 
-定时采集、第二数据源、局域网共享、桌面 App 打包。
-
-## 环境事实（会话已验证）
-
-- 东财接口在 Node fetch + TUN 代理下被 TLS 指纹反爬 → 数据源只走巨潮。
-- 巨潮 CLI 参数面：`-c/--company`（名称|代码|拼音，逗号分隔）、`-i/--industry`（证监会门类）、`--year` 与 `--from/--to` 互斥且必选其一、`-t/--type annual|semi|q1|q3|all`、`--limit`、`--sleep`(≥200)、`--dry-run`、`-o/--out`。
-- 仓库约定：`data/` 与 `.env` 不入库；Conventional Commit；提交前跑 `pnpm --filter <pkg> run typecheck`；多机同步走 git-sync（已配 `sync.targets` → MacBook）。
-- 工作区在 ASSESS 时干净，HEAD = d32b130。
+### P5: 仓库级工程化
+- 根目录 `package.json` 串联 `test`、`typecheck` 等 scripts，实现单命令全量回归。
