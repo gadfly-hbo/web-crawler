@@ -11,12 +11,15 @@ import {
   type ApiConnectorParams,
 } from 'api-connector/domain';
 import { egressBlockReason } from 'data-governance/egress';
+import { validateRssParams, type RssTaskParams } from 'rss-collector/domain';
 
 export * from 'cninfo-reports/domain';
 export type { ApiConnectorParams } from 'api-connector/domain';
 export { validateApiConnectorParams } from 'api-connector/domain';
+export type { RssTaskParams } from 'rss-collector/domain';
+export { validateRssParams } from 'rss-collector/domain';
 
-export type SourceType = 'cninfo' | 'api-connector' | 'web-scraper';
+export type SourceType = 'cninfo' | 'api-connector' | 'web-scraper' | 'rss';
 
 export type CninfoTaskParams = CninfoTaskParamsFromDomain & {
   sourceType?: 'cninfo';
@@ -33,7 +36,7 @@ export interface WebScraperParams {
   baseUrl?: string;
 }
 
-export type TaskParams = (CninfoTaskParams | ApiConnectorParams | WebScraperParams) & {
+export type TaskParams = (CninfoTaskParams | ApiConnectorParams | WebScraperParams | RssTaskParams) & {
   schemaVersion?: string;
   timeoutMs?: number;
 };
@@ -91,6 +94,9 @@ export function validateTaskParams(
   if (sourceType === 'web-scraper') {
     return [...sharedErrors, ...validateWebScraperParams(params as WebScraperParams)];
   }
+  if (sourceType === 'rss') {
+    return [...sharedErrors, ...validateRssParams(params as RssTaskParams)];
+  }
   return [`不支持的数据源类型: ${(params as any).sourceType}`];
 }
 
@@ -98,6 +104,9 @@ export function summarizeTask(params: TaskParams, dryRun: boolean): string {
   if (params.sourceType === 'web-scraper') {
     const prefix = dryRun ? '【预览】' : '';
     return `${prefix}商品价格分析 · ${params.name || '未命名'}`;
+  }
+  if (params.sourceType === 'rss') {
+    return `RSS 采集 · ${params.name || '未命名'}`;
   }
   if (params.sourceType === 'api-connector') {
     const prefix = dryRun ? '【预览】' : '';
@@ -116,11 +125,14 @@ export interface ScenarioMeta {
   description: string;
 }
 
-export type TaskCategory = 'cninfo' | 'product-price' | 'weather' | 'api';
+export type TaskCategory = 'cninfo' | 'product-price' | 'weather' | 'api' | 'rss';
 
 export function getTaskCategory(params: TaskParams): TaskCategory {
   if (params.sourceType === 'web-scraper') {
     return 'product-price';
+  }
+  if (params.sourceType === 'rss') {
+    return 'rss';
   }
   if (params.sourceType === 'api-connector') {
     if (
@@ -144,6 +156,7 @@ export const CATEGORY_LABELS: Record<
   'product-price': { label: '商品标价分析', icon: '🏷️', chipClass: 'chip-accent' },
   weather: { label: '城市气象', icon: '🌤️', chipClass: 'chip-queue' },
   api: { label: '通用API', icon: '🔌', chipClass: 'chip-queue' },
+  rss: { label: 'RSS 资讯', icon: '📡', chipClass: 'chip-ok' },
 };
 
 export const COLLECTOR_SCENARIOS: readonly ScenarioMeta[] = [

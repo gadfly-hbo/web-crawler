@@ -1,0 +1,26 @@
+{
+  "name": "rss-collector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "公开 RSS/Atom 只读采集 PoC：快照→抽取→证据→manifest 全链复用统一治理",
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./domain": "./src/domain/index.ts",
+    "./events": "./src/events.ts",
+    "./feed-parser": "./src/feed-parser.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "data-governance": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

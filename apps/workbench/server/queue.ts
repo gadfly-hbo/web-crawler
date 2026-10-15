@@ -114,7 +114,9 @@ export class TaskQueue {
           ? 'firecrawl-scraper'
           : params.sourceType === 'api-connector'
             ? 'api-connector'
-            : 'cninfo-reports',
+            : params.sourceType === 'rss'
+              ? 'rss-collector'
+              : 'cninfo-reports',
         id,
       ),
       logFile: path.join(this.logsDir, `${id}.ndjson`),

@@ -18,6 +18,7 @@ export interface SnapshotMetadata {
   files: {
     markdown?: string;
     html?: string;
+    xml?: string;
     metadata: string;
   };
 }
@@ -45,6 +46,7 @@ export class SnapshotStorage {
       statusCode?: number;
       markdown?: string;
       html?: string;
+      xml?: string;
       requestedAt?: string;
       receivedAt?: string;
       responseType?: string;
@@ -81,6 +83,13 @@ export class SnapshotStorage {
         files.html = 'content.html';
         formats.push('html');
         rawContentForHash += acquisition.html;
+      }
+
+      if (acquisition.xml !== undefined) {
+        await fs.writeFile(path.join(tmpDir, 'content.xml'), acquisition.xml, 'utf8');
+        files.xml = 'content.xml';
+        formats.push('xml');
+        rawContentForHash += acquisition.xml;
       }
 
       const contentHash = createHash('sha256').update(rawContentForHash).digest('hex');

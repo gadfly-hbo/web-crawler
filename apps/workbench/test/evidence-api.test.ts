@@ -156,3 +156,53 @@ test('Evidence API: 完整打通证据检索、快照文本定位与人工修订
     await rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test('snapshot-content: RSS 的 content.xml 可回看（format=xml 与缺省回退），md/html 行为零变化', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'wb-evidence-xml-'));
+  const queue = new TaskQueue({ runner: dummyRunner, dataRoot: dataDir });
+  await queue.init();
+  const stocks = new StockDirectory();
+  const app = buildApp({ queue, stocks });
+
+  try {
+    const params: WebScraperParams = {
+      sourceType: 'web-scraper',
+      name: 'XML 回看测试',
+      urls: ['https://brand-a.example/p1'],
+      mock: true,
+      analyze: true,
+    };
+    const task = await queue.create(params, false);
+
+    // 仅含 content.xml 的快照（RSS 形态）
+    const xmlDir = path.join(task.outDir, 'snapshots', 'snap_xml');
+    await mkdir(xmlDir, { recursive: true });
+    const xmlContent = '<?xml version="1.0"?>\n<rss version="2.0">\n  <channel>\n    <title>XML 源</title>\n  </channel>\n</rss>';
+    await writeFile(path.join(xmlDir, 'content.xml'), xmlContent, 'utf8');
+
+    // md/html 均不存在时缺省回退读 xml
+    const fallbackRes = await app.fetch(new Request(`http://localhost/api/tasks/${task.id}/snapshot-content?snapshotId=snap_xml`));
+    assert.equal(fallbackRes.status, 200);
+    const fallback = (await fallbackRes.json()) as any;
+    assert.equal(fallback.format, 'xml');
+    assert.equal(fallback.content, xmlContent);
+    assert.ok(Array.isArray(fallback.lines) && fallback.lines.length === 6);
+
+    // format=xml 显式请求
+    const explicitRes = await app.fetch(
+      new Request(`http://localhost/api/tasks/${task.id}/snapshot-content?snapshotId=snap_xml&format=xml`)
+    );
+    assert.equal(explicitRes.status, 200);
+    assert.equal(((await explicitRes.json()) as any).format, 'xml');
+
+    // 既有 md 快照不受影响：format=xml 时仍读 xml（不存在则回退 md，不 404）
+    const mdDir = path.join(task.outDir, 'snapshots', 'snap_md');
+    await mkdir(mdDir, { recursive: true });
+    await writeFile(path.join(mdDir, 'content.md'), '# MD 快照', 'utf8');
+    const mdDefault = await app.fetch(new Request(`http://localhost/api/tasks/${task.id}/snapshot-content?snapshotId=snap_md`));
+    assert.equal(mdDefault.status, 200);
+    assert.equal(((await mdDefault.json()) as any).format, 'markdown');
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});

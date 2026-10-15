@@ -6,6 +6,10 @@
 const BLOCK_REASON = '目标地址指向内网/回环，已被出口门禁拦截';
 const PROTOCOL_REASON = '仅支持 http/https URL';
 
+/** 拦截原因分类（测试豁免通道需要区分两类判定，见 rss-collector G3） */
+export const EGRESS_PRIVATE_BLOCK_REASON = BLOCK_REASON;
+export const EGRESS_PROTOCOL_REASON = PROTOCOL_REASON;
+
 function parseIpv4(host: string): number[] | null {
   // 支持标准四段、短格式（127.1）、十进制整型（2130706433）、十六/八进制段（0x7f / 0177）
   const parts = host.split('.');
@@ -52,15 +56,6 @@ function ipv4Blocked(octets: number[]): boolean {
 }
 
 function parseIpv6Groups(host: string): number[] | null {
-  // 处理 ::ffff:a.b.c.d mapped 形式
-  const mapped = host.match(/^(.*)::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
-  if (mapped) {
-    const octets = parseIpv4(mapped[2]);
-    if (!octets) return null;
-    const head = parseIpv6Groups(mapped[1] === '' ? '::' : mapped[1]);
-    if (!head) return null;
-    return [...head.slice(0, 6), (octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]];
-  }
   if (!/^[0-9a-f:]+$/i.test(host)) return null;
   if (!host.includes(':')) return null;
   const halves = host.split('::');
@@ -117,7 +112,8 @@ export function egressBlockReason(rawUrl: string): string | null {
   if (host.startsWith('[')) {
     host = host.slice(1, host.indexOf(']'));
   }
-  host = host.split('%25')[0].toLowerCase();
+  // 剥 FQDN 尾随点（WHATWG URL 对非 IP 主机不去点）：localhost. 不得绕过回环判定
+  host = host.split('%25')[0].toLowerCase().replace(/\.$/, '');
 
   if (host === 'localhost' || host.endsWith('.localhost')) {
     return BLOCK_REASON;

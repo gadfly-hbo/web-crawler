@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -141,6 +142,40 @@ test('data-governance: 快照新字段 response_type/truncated 可持久化并�
   }
 });
 
+test('data-governance: storage 快照支持 xml 内容字段（content.xml + formats + 哈希）', async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), 'dg-snap-xml-'));
+  const { createHash } = await import('node:crypto');
+
+  try {
+    const storage = new SnapshotStorage(tmp);
+    const xmlText = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>';
+    const res = await storage.saveSnapshot({
+      targetUrl: 'https://news.example.com/feed.xml',
+      provider: 'rss_native_fetch',
+      statusCode: 200,
+      xml: xmlText,
+      responseType: 'application/rss+xml',
+    }, 'sx1');
+
+    assert.equal(res.metadata.files.xml, 'content.xml');
+    assert.ok(res.metadata.formats.includes('xml'), `formats 应含 xml: ${res.metadata.formats}`);
+    assert.equal(res.metadata.content_hash, createHash('sha256').update(xmlText).digest('hex'), '哈希必须覆盖 XML 文本');
+    assert.equal(await readFile(path.join(tmp, 'sx1', 'content.xml'), 'utf8'), xmlText);
+    const readBack = await storage.readMetadata('sx1');
+    assert.equal(readBack?.files.xml, 'content.xml');
+
+    // 兼容回归：不传 xml 时产物与旧版等价（无 content.xml、无 xml 键、formats 不含 xml）
+    const legacy = await storage.saveSnapshot({ targetUrl: 'http://example.com', markdown: '# h1' }, 'sx2');
+    assert.equal(legacy.metadata.files.xml, undefined);
+    assert.equal(legacy.metadata.formats.includes('xml'), false);
+    assert.equal(existsSync(path.join(tmp, 'sx2', 'content.xml')), false);
+    const raw = JSON.parse(await readFile(path.join(tmp, 'sx2', 'metadata.json'), 'utf8'));
+    assert.equal('xml' in raw.files, false, '旧调用落盘 JSON 的 files 不应出现 xml 键');
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test('data-governance: manifest 新字段 limitations/operations 持久化、读回并通过校验', async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), 'dg-mf2-'));
 
@@ -252,4 +287,22 @@ test('data-governance: 出口守卫拦截私网/回环/非标协议，放行公�
   }
 
   assert.equal(egressBlockReason('not a url'), '仅支持 http/https URL');
+});
+
+test('data-governance: 出口守卫剥尾随点主机名（localhost. 不再绕过回环判定）', () => {
+  const blocked = [
+    'http://localhost./',
+    'http://foo.localhost./',
+    'http://LOCALHOST./feed.xml',
+    'http://localhost.:8080/feed',
+    'http://127.0.0.1./',
+  ];
+  for (const url of blocked) {
+    const reason = egressBlockReason(url);
+    assert.ok(reason, `应拦截: ${url}`);
+    assert.match(reason, /内网|回环/);
+  }
+  // 公网域名的尾随点（FQDN 惯例）仍放行
+  assert.equal(egressBlockReason('https://example.com./feed.xml'), null);
+  assert.equal(egressBlockReason('http://api.example.com./v1'), null);
 });

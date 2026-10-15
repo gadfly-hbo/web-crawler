@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>截断样本源</title>
+    <link>https://trunc.example.com/</link>
+    <description>冻结样本：传输截断的 Feed（A07）</description>
+    <item>
+      <title>完整条目一</title>
+      <link>https://trunc.example.com/1</link>
+      <pubDate>Wed, 14 Oct 2026 08:00:00 GMT</pubDate>
+      <description>第一个条目完整。</description>
+    </item>
+    <item>
+      <title>完整条目二</title>
+      <link>https://trunc.example.com/2</link>
+      <pubDate>Wed, 14 Oct 2026 09:00:00 GMT</pubDate>
+      <description>第二个条目完整。</description>
+    </item>
+    <item>
+      <title>被截断的第三条

@@ -394,6 +394,18 @@ export function App() {
                 列表路径：{activeTask.params.extraction.listPath}<br />
                 请求间隔：{activeTask.params.sleepMs}ms
               </>
+            ) : activeTask.params.sourceType === 'rss' ? (
+              <>
+                目标 Feed：共 {activeTask.params.urls.length} 个（任务即白名单，不跟随条目链接）
+                <br />
+                条目上限：每 Feed {activeTask.params.limit ?? 50} 条
+                {activeTask.params.deadlineMs != null && (
+                  <>
+                    <br />
+                    软超时：{activeTask.params.deadlineMs}ms
+                  </>
+                )}
+              </>
             ) : (
               <>
                 {activeTask.params.companies.length > 0 && <>公司：{activeTask.params.companies.join('、')}<br /></>}
@@ -419,6 +431,8 @@ export function App() {
               ? '公开网页快照与分析数据集仅保存在本机，不包含任何私有明细，结果不可变存盘。'
               : activeTask.params.sourceType === 'api-connector'
               ? '数据来自自定义 API 接口，仅保存在本机 data/ 目录，不上传任何服务器。'
+              : activeTask.params.sourceType === 'rss'
+              ? '数据来自任务中批准的公开 RSS Feed，只读取不写入，仅保存在本机 data/ 目录。'
               : '数据来自巨潮资讯网公开公告，仅保存在本机 data/ 目录，不上传任何服务器。'}
           </p>
         </aside>

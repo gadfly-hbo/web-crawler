@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 顶部注释：应被忽略 -->
+<rss version="2.0">
+  <channel>
+    <title>结构漂移样本源</title>
+    <link>https://drift.example.com/</link>
+    <description>冻结样本：注释、未知标签、命名空间前缀标签（A14 结构漂移）</description>
+    <unknownTag source="drift">通道级未知标签</unknownTag>
+    <item>
+      <!-- 条目内注释 -->
+      <title>带前缀标签的条目</title>
+      <link>https://drift.example.com/1</link>
+      <atom:link rel="self" href="https://drift.example.com/1?atom=1" xmlns:atom="http://www.w3.org/2005/Atom"/>
+      <dc:date xmlns:dc="http://purl.org/dc/elements/1.1/">2026-10-14T08:00:00Z</dc:date>
+      <custom:field>自定义扩展</custom:field>
+      <description>atom:link 与 dc:date 均应被忽略：link 用无前缀 link，published 为 null。</description>
+    </item>
+  </channel>
+</rss>
+<!-- 尾部注释 -->

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>示例公开资讯源</title>
+    <link>https://news.example.com/</link>
+    <description>冻结样本：正常 RSS 2.0</description>
+    <item>
+      <title>第一条：平台发布新版本</title>
+      <link>https://news.example.com/posts/101</link>
+      <guid isPermaLink="true">https://news.example.com/posts/101</guid>
+      <pubDate>Wed, 14 Oct 2026 08:00:00 GMT</pubDate>
+      <description>新版本包含三项能力更新。</description>
+    </item>
+    <item>
+      <title>第二条：行业数据周报</title>
+      <link>https://news.example.com/posts/102</link>
+      <guid isPermaLink="true">https://news.example.com/posts/102</guid>
+      <pubDate>Thu, 15 Oct 2026 09:30:00 GMT</pubDate>
+      <description>本周行业指数环比上升。</description>
+    </item>
+    <item>
+      <title>Third: English entry</title>
+      <link>https://news.example.com/posts/103</link>
+      <guid>urn:example:post:103</guid>
+      <pubDate>Fri, 16 Oct 2026 10:00:00 GMT</pubDate>
+      <description>Weekly digest in English.</description>
+    </item>
+  </channel>
+</rss>

@@ -189,6 +189,9 @@ importers:
       react-dom:
         specifier: ^19.2.1
         version: 19.3.0(react@19.3.0)
+      rss-collector:
+        specifier: workspace:*
+        version: link:../../crawlers/rss-collector
     devDependencies:
       '@types/node':
         specifier: ^26.6.2
@@ -245,6 +248,22 @@ importers:
         version: 7.0.2
 
   crawlers/firecrawl-scraper:
+    dependencies:
+      data-governance:
+        specifier: workspace:*
+        version: link:../../packages/data-governance
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  crawlers/rss-collector:
     dependencies:
       data-governance:
         specifier: workspace:*

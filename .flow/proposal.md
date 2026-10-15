@@ -1,37 +1,43 @@
-# WC-AR-05 执行治理增量：runner 超时/进程组 + 出口门禁 + 凭据 argv 消除（proposal）
+# 提案（讨论稿固化）— WC-AR-04 RSS 适配器 PoC
 
-> 规格来源：《Agent-Reach 能力吸收采纳评审与融合方案 v1.1》（docs/AGENT_REACH_ADOPTION.md §8 WC-AR-05 行、§2.2 缺口表、§7 A02/A10 行），上一批 WC-AR-02 已 DONE（2c1d664），本批为其后续。本文件钉为本轮 dev-flow 的唯一规格源。
+来源：`docs/AGENT_REACH_ADOPTION.md` §6「PoC 计划：公开 RSS 只读渠道」+ §7 A 用例适用性 + §8 工作包表（WC-AR-04 行）。
+用户指令："继续下一批"（顺序 00→01→(02∥05)→04→06，WC-AR-02/05 已完成并推送，WC-AR-04 依赖已满足）。
+固化时间：2026-10-15。
 
-## 背景与定位
+## 已定决策（不可推翻，后续阶段只可细化）
 
-采纳评审确认：引入任何带凭据/联网新渠道（WC-AR-04 RSS PoC）前，必须先补齐执行治理三缺口。本包只做治理增量，不新增渠道、不改任务状态机、不动既有爬虫业务逻辑。
+1. **目标**：验证"一个新增公开只读来源如何走完 快照 → 抽取 → 证据 → manifest → 工作台展示 全链"。不装 Agent-Reach，不阻塞主线。
+2. **新包** `crawlers/rss-collector`，照抄三爬虫既有模式：
+   - `main.ts` CLI：`--urls`（逗号分隔的已批准 Feed）、`--limit`（条目上限，默认 50）、`-o/--out-dir`、`--json`、`--deadline-ms`；
+   - `events.ts`：对齐 firecrawl-scraper 的 6 类 NDJSON 事件协议（start/scraping/snapshot_saved/failed/done/error），workbench reducer 可直接消费；
+   - 采集：原生 `fetch` 拉 Feed 原文 → `SnapshotStorage` 存为 `content.xml` + metadata（含哈希与双时间戳）；**零新依赖**，PoC 手写最小 RSS/Atom 解析（样本格式固定）；正式化时再评估是否引入 XML 库；
+   - 抽取：规则式 title/link/published/summary → `FieldEvidence`（`locateSnippet` 定位到 Feed 原文行/偏移）；原文没有的字段 `null + missing_reason`，禁止估算发布时间；
+   - 交付：`createAndSaveDeliveryManifest` 生成 manifest + limitations；`BudgetGate` 限 `maxCalls = urls.length`。
+3. **workbench 接入**：`validateRssParams`（URL 域白名单、`maxFeedRequests ≤ 5`、不跟随条目链接）+ `buildCrawlerSpawnSpec` 增 `rss` 分支 + 场景入口（**默认收起**，验收后放开——放开属 WC-AR-06，不在本批）。
+4. **数据流声明**：仅访问任务中批准的 Feed 域名；无凭据；无 LLM；不抓条目正文与附件（需要时另立任务走 web-scraper）。
+5. **验收（三组全过才算完成）**：
+   - 主线回归：现有测试全绿 + mock 商品样板端到端不变（A18）；
+   - RSS 冻结样本 ≥20 用例：正常 Feed、Atom 变体、合法空 Feed（A06）、超时、截断、私网 URL 拦截（A10，复用 WC-AR-05 出口门禁 `egressBlockReason`）、取消（A13）；
+   - 不装 Agent-Reach 全程可跑（A01）；无隐式安装/联网外目标（A19）。
+6. **出口治理复用 WC-AR-05 成果**（handoff 已声明）：采集 URL 校验期过 `egressBlockReason`；如跟随重定向须逐跳守卫（manual + 5 跳上限 + 每跳计 budget）；无凭据故 argv 无密钥问题；超时走 `TaskParams.timeoutMs` 端到端链路（已贯通）。
 
-## 已定决策（约束，不可被后续阶段推翻）
+## 约束与边界
 
-1. **runner 任务级超时**：workbench runner 增加任务级超时机制（红队/评审确认的缺口：runner.ts:29-73 无任何超时）；超时到达时走与取消相同的终止路径（SIGTERM → 宽限 → SIGKILL）。验收对应报告 A02 的通用部分（"诊断/子进程永不返回"时任务能终结）。
-2. **进程组终止**：终止信号作用于进程组/进程树，不只杀直接子进程（现状 runner.ts:64-73 只杀直接子进程；爬虫子进程再 spawn 的孙进程会泄漏）。
-3. **URL 私网/回环拦截（对所有爬虫生效）**：采集目标 URL 在发起前经过私网/回环地址检查并拒绝（现状：全仓无对应代码）。验收对应 A10。
-4. **`--api-key` 从 argv 消除**：web-scraper 的 Firecrawl API key 不再以命令行明文传递（runner.ts:154 现状），改为仅 env 注入。验收：spawn 的 argv 不再含密钥。
-5. **既有取消测试不回退**：取消（SIGTERM→SIGKILL）语义与既有测试保持通过，超时/进程组改动不得破坏。
-6. **范围排除**（本包不做）：浏览器 localStorage 明文凭据（SettingsModal.tsx:72）与服务端 process.env 重启即失的治理——采纳文档 §8 的 WC-AR-05 行未含此项，留待凭据治理专项；诊断桥（WC-AR-03 暂缓）；任务状态机扩展。
-7. **兼容性硬约束**：全量测试保持全绿（当前 138）；typecheck/build 通过。
+- 增量全部为加法：新 SourceType 分支、新包；不改既有爬虫行为。
+- `schemaVersion` 兼容先例（WC-AR-02）：TaskParams 联合层按需增 `RssTaskParams`，不动其他包 domain 类型。
+- 场景入口默认收起：UI 上提供入口但不在默认场景清单露出（具体形态在 PRD/GRILL 细化）。
+- §7 中标 ✅ 且与 RSS 相关的用例（A05 内容检查、A07 截断、A09 诱导内容不执行、A14 结构漂移保留原文不猜字段、A16 新运行新目录不覆盖、A20 只读无写操作）纳入本批测试覆盖；A02/A04/A11 不在范围。
 
-## 被拒绝的替代方案（记录，不再复议）
+## 已拒绝/排除的替代方案
 
-- ChannelRegistry 插件架构（采纳文档 §3 已定不建）——治理改动落在既有 runner/校验 seam 上。
-- 审批态/DRAFT 状态机（§2.2 已定本地单用户不需要）。
+- 不引入 XML 解析库（PoC 手写最小解析，样本格式固定；正式化再评估）。
+- 不跟随条目链接抓正文/附件（越界即另立 web-scraper 任务）。
+- 不装 Agent-Reach、不接诊断桥（WC-AR-03 暂缓）。
 
-## 验收标准
+## 开放问题（留待红队/PRD/GRILL）
 
-1. A02 通用部分：构造一个永不返回的爬虫子进程，任务在超时后终结（状态 failed，事件流有终态），无残留进程。
-2. 进程组：子进程再 spawn 的孙进程随任务终止被杀。
-3. A10：私网/回环 URL（如 `http://127.0.0.1`、`http://192.168.x.x`、`http://localhost`）被拦截并给出中文错误；对三个爬虫统一生效。
-4. argv 无密钥：web-scraper spawn 的命令行参数中不出现 apiKey 值；密钥仅经 env 传递；爬虫端从 env 读取的功能正常（mock 路径可测）。
-5. 全量门禁：`pnpm test && pnpm typecheck && pnpm build` 全绿。
-
-## 开放问题（留给 PRD/GRILL）
-
-- 超时的默认值与可配置面（任务参数字段 vs 全局常量；默认时长）。
-- 私网拦截的实施层：workbench 校验期（validate*Params）拦截 vs 爬虫运行时拦截 vs 两者；DNS 解析后指向私网的间接形态（rebinding）是否在本包覆盖。
-- 进程组终止的实现方式（detached 进程组 + 负 pid kill vs 其他），macOS/Linux 语义差异。
-- apiKey 的 env 命名与爬虫端读取点的兼容性（既有自托管/云模式的行为不变式）。
+- WC-AR-05 评审递延项 N1–N6（尤其 N2 预算定容、N1 尾随点绕过）是否随本批顺带处置——默认**否**（保持范围聚焦），除非红队认定其阻塞 RSS PoC 正确性。
+- RSS 冻结样本的具体来源形态（本地 fixture 文件 vs 内置字符串）与 ≥20 用例的分布。
+- workbench 场景入口"默认收起"的具体实现形态（COLLECTOR_SCENARIOS 标志位 vs 环境变量）。
+- `--deadline-ms` 与 workbench `timeoutMs` 的语义对齐方式。
+- pnpm workspace 新包注册与 tsconfig 路径引用的既有惯例（照抄三爬虫哪一个最近似）。

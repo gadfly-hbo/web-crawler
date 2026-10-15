@@ -1,91 +1,134 @@
-# PRD: WC-AR-05 执行治理增量——runner 超时/进程组 + 出口门禁 + web-scraper 凭据 argv 消除
+# PRD — WC-AR-04 RSS 适配器 PoC
 
-> 规格源：`.flow/proposal.md` ＞ 本 PRD。红队：`.flow/red-team.md`（verdict GO，3 条附带条件已在本 PRD §实现决策 7/8/9 与 §Out of Scope 处置）。无 issue tracker，按 dev-flow 降级规则落盘本文件。
+- 规格 precedence：`.flow/proposal.md` ＞ 本文件；红队报告 `.flow/red-team.md`（GO-WITH-CONDITIONS）的条件已逐条吸收进实现决策并标注 KA 编号。
+- 发布方式：本仓库未配置 issue tracker，PRD 落盘 `.flow/prd.md`（沿用本流程既有降级惯例）。
 
 ## Problem Statement
 
-引入新联网渠道（WC-AR-04 RSS）前，执行面有三个实证缺口：runner 无任务级超时且只杀直接子进程（`runner.ts:26-73`，子进程永不返回时任务悬挂、孙进程泄漏路径无防护）；全仓无私网/回环 URL 拦截（SSRF 面无防护）；web-scraper 的 Firecrawl apiKey 以明文进 spawn argv（`runner.ts:152-155`，`ps` 可见）。
+工作台目前只有三个固化数据源（cninfo 财报、api-connector、web-scraper 商品样板）。要验证平台的可扩展性主张——"新增一个公开只读来源能走完 快照 → 抽取 → 证据 → manifest → 工作台展示 的完整治理链"——需要一个最小但真实的新渠道实验。RSS 是最合适的选择：公开、只读、零凭据、零 LLM、零新依赖，且能直接复用 WC-AR-05 刚交付的出口门禁、任务超时与进程组终止治理。
 
 ## Solution
 
-四处最小治理增量：runner 增加任务级超时（默认 + 任务参数可覆盖）并改造为进程组终止（detached + 负 pid 信号）；共享 URL 出口守卫落在 data-governance（三爬虫公共依赖），校验期拦截 web-scraper/api-connector 的采集目标 URL，cninfo 对 `CNINFO_ORIGIN` 应用同一守卫，api-connector 引擎运行时对重定向逐跳重检；web-scraper 的 apiKey 仅从 argv 删除（env 链路已端到端存在，爬虫端行为不变）。另修一个红队发现的真实边缘：重启后带脱敏假密钥的 queued 任务直接标 failed。
+新增 `crawlers/rss-collector` 爬虫包：输入一批已批准的公开 Feed URL，逐个拉取原文并存为带哈希与双时间戳的 XML 快照，规则式抽取条目的 title/link/published/summary 四字段并生成可回验原文的字段级证据，最终产出 records/evidences/manifest 交付包。workbench 以纯加法接入：新 sourceType `rss` 的参数校验、任务分发与展示，但场景入口默认收起（不在场景清单露出），放开留给 WC-AR-06。
 
 ## User Stories
 
-1. As a 工作台用户，I want 永不返回的爬虫子进程在超时后任务自动终结为 failed，so that 队列不被悬挂任务卡死（A02 通用部分）。
-2. As a 工作台用户，I want 终止信号覆盖整个进程组，so that 未来爬虫引入孙进程时不泄漏（前瞻性防护，当前爬虫无孙进程）。
-3. As a 工作台用户，I want 任务级超时可按任务覆盖（timeoutMs），so that 合法的长时间 cninfo 采集不被全局默认误杀。
-4. As a 安全维护者，I want 私网/回环/链路本地地址（含十进制/十六进制 IP 变体）在任务校验期被中文错误拒绝，so that 采集目标不会指向内网（A10）。
-5. As a 安全维护者，I want api-connector 跟随重定向时每跳重新检查目标，so that 公网 URL 302 跳私网不能绕过预检。
-6. As a 安全维护者，I want web-scraper spawn 的 argv 不含 apiKey 明文，so that `ps` 不再暴露凭据；CLI 直用 `--api-key` 的用户路径不受影响。
-7. As a 工作台用户，I want 重启后残留 queued 任务若只持有脱敏假密钥则明确标 failed，so that 不以不可溯源的 401 静默失败。
-8. As a 维护者，I want 既有 138 项测试全绿、取消语义不回退，so that 治理增量对主线零风险。
+1. 作为数据工程师，我想提交一个包含最多 5 个公开 Feed URL 的采集任务，以便用最小配置验证新渠道接入。
+2. 作为数据工程师，我想让每个 Feed 原文以 XML 快照形式落盘（含 SHA-256 哈希与请求/接收双时间戳），以便事后审计与防篡改核验。
+3. 作为数据工程师，我想让每个条目的 title/link/published/summary 都携带指向 Feed 原文行号与字符偏移的证据，以便任何字段值可回验原文。
+4. 作为数据工程师，我想让原文没有的字段显式记为 null 加缺失原因（尤其禁止估算发布时间），以便下游不会把猜测当事实。
+5. 作为数据工程师，我想让任务自动生成 manifest（含 schema、质量指标、limitations 与关键文件校验和），以便交付包可用既有防篡改工具核验。
+6. 作为工作台用户，我想在任务列表看到 RSS 任务的逐 Feed 进度、失败清单与如实的终态分级（全部成功=succeeded、部分失败=partial、全部失败=failed），以便不用看日志就知道结果。
+7. 作为安全负责人，我想让所有 Feed URL（含重定向后的每一跳）都经过出口门禁拦截私网/回环目标，以便爬虫不能被诱导访问内网。
+8. 作为安全负责人，我想让凭据类风险在新渠道为零（无凭据、argv 无任何密钥），以便新增渠道不引入新的暴露面。
+9. 作为平台维护者，我想让 Feed 拉取次数受预算门禁限制（每 Feed 一次配额、重定向每 Feed 最多 5 跳），以便失控任务自动熔断。
+10. 作为平台维护者，我想让 RSS 任务受任务级超时保护（到点先发结构化 error 事件再终止进程组），以便挂起任务不占住串行队列。
+11. 作为平台维护者，我想让上游 Feed 内容（标题、摘要、链接）只作为不可信数据处理、永不执行，以便 A09 类诱导攻击无效。
+12. 作为平台维护者，我想让结构漂移的 Feed（未知标签、缺字段、截断）保留原文并如实标注缺失，以便 A14 类情况不产生脑补数据。
+13. 作为平台维护者，我想让出口门禁修复尾随点主机名绕过（`localhost.`），以便门禁的"识别回环"契约没有字面缺口。
+14. 作为验收人，我想在不安装任何外部 agent 工具的情况下全程运行与测试 RSS 采集，以便验证 A01/A19 的零依赖主张。
 
 ## Implementation Decisions
 
-1. **任务级超时**：`spawnRunner` 增加 `timeoutMs` 选项；到点后先输出人读日志行（任务超时，已终止），再走与取消相同的终止路径（SIGTERM→宽限→SIGKILL，见决策 2）；终态沿用现有"runner 的 done 拒绝 → failed"分类。默认值 `DEFAULT_TASK_TIMEOUT_MS = 60 * 60 * 1000`（60 分钟）：本机无真实时长数据可校准（tasks.json 最长 5s），cninfo 多公司×多报告类型合法任务可达数十分钟，取宽裕默认 + 任务参数 `timeoutMs`（TaskParams 联合层可选字段，正整数校验）覆盖；测试用小值。
-2. **进程组终止**：spawn 加 `detached: true`（POSIX 新进程组）；终止用 `process.kill(-pid, sig)`，对已退出进程组的 ESRCH 容错（try/catch）；`SpawnHandle` 暴露 `pid` 供测试断言残留。仅 macOS 实证，Linux 语义差异记录为未验证项；服务自身 SIGINT 关停清理不在本包（记录已知限制）。
-3. **共享出口守卫**：data-governance 新增纯函数（如 `isPrivateOrLoopbackUrl(url): boolean` / `assertPublicHttpUrl`），覆盖：`localhost`/`*.localhost`、`127.0.0.0/8`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`169.254.0.0/16`、`0.0.0.0`、`::1`、`fc00::/7`、`fe80::/10`，以及十进制/十六进制/短格式 IP 变体（如 `2130706433`、`0x7f000001`）；仅按 URL 字面解析，**不做 DNS 解析**（rebinding 记录为已知限制）。
-4. **校验期拦截（红队条件 2 的可测化）**：`validateWebScraperParams` 对 `urls` 逐项、`validateApiConnectorParams` 对 `request.url` 调共享守卫，中文错误（风格随现有校验消息）；cninfo 对 `CNINFO_ORIGIN` 在 CLI 校验期调同一守卫——三个爬虫的**采集目标/请求发起对象**全部经过守卫（提案"对所有爬虫生效"的落地语义）。web-scraper 的 `baseUrl`（Firecrawl 服务端点）**豁免**：自托管合法指向私网（既有测试 api.test.ts:318 即用 localhost 端点），且 baseUrl 不是"采集目标 URL"。
-5. **重定向逐跳重检**：api-connector 引擎请求路径改 `redirect: 'manual'` 自行跟随，每跳对 Location 目标调守卫，限 5 跳；web-scraper 的实际抓取由 Firecrawl 服务端执行，其重定向目标不受本地门禁约束——记录为已知限制（云端代抓固有能力边界）。
-6. **apiKey argv 消除**：`buildCrawlerSpawnSpec` 的 web-scraper 分支删除 `--api-key` argv 注入，保留既有 env 注入（runner.ts:153）与 adapter 的 `config.apiKey || process.env.FIRECRAWL_API_KEY` 回退（adapter.ts:21）；爬虫 CLI 的 `--api-key` 解析保留（直用 CLI 的用户路径不变）。**同批必须改写 `runner-dispatch.test.ts:110-136`**：argv 断言从"含密钥"反转为"不含密钥"（红队条件 3，列入"不回退"清单）。
-7. **重启脱敏假密钥边缘（红队 KA4）**：queue 重启恢复时，queued 任务的 `params.apiKey` 若为脱敏形态（含 `****`）则标 failed 并记录原因（密钥随服务重启失效，需重新提交）。
-8. **api-connector headers 泄漏的显式排除（红队条件 1）**：api-connector 的 `request.headers` 经 `--config-json` 整体进 argv 且 tasks.json 不脱敏——属实，但本包不修：headers 是任意键值集合，脱敏/注入机制需专项设计，与单字段 apiKey 的现成 env 链路不同构；采纳文档 §8 的 WC-AR-05 范围本就只列 `--api-key`。记录为凭据治理专项缺口（与 localStorage/process.env 持久化同类）。
-9. **不做的事**：不改任务状态机；不动爬虫业务逻辑；不引入 ChannelRegistry；不做服务关停的进程组清理；不做 DNS rebinding 防护。
+### 新包 rss-collector（照抄三爬虫模式）
+
+1. **包结构**：`main.ts`（CLI 入口 + parseArgs 纯函数）、`domain/`（参数类型 + validateRssParams，镜像 api-connector/domain 惯例，供 workbench 复用）、`events.ts`（事件类型 + NDJSON 解析器）、`feed-parser.ts`（纯函数解析器）、`collector.ts`（采集编排）。package.json exports 与 tsconfig 照抄 firecrawl-scraper；依赖仅 `data-governance: workspace:*`，devDeps 仅 tsx/typescript/@types/node——**零新外部依赖**（KA4/A01）。pnpm workspace 的 `crawlers/*` glob 自动纳入。
+2. **CLI**：`--urls`（逗号分隔，1–5 个）、`--limit`（条目上限，默认 50）、`-o/--out-dir`、`--json`（NDJSON 模式）、`--deadline-ms`（整任务级软超时，默认 60000，KA5）。参数校验失败 → 输出 error 事件 + 非零退出（对齐 cninfo/api-connector 行为）。
+3. **事件协议（KA1 裁决，理由必读）**：提案钉的规范内容是"6 类事件协议 + workbench reducer 可直接消费"（括号里的 firecrawl 类型名清单是描述性举例——且与 firecrawl 实际代码不符，实际叫 `scrape_failed`）。红队证明这两句按字面不能同时成立：workbench reducer 说的是 cninfo 事件方言，firecrawl 形状的 done.summary 会让部分失败任务误判 failed。**裁决：RSS 事件保持 6 类分类学（start / 单条进度 / 单条保存 / 单条失败 / done / error），类型名采用 workbench reducer 已消费的方言**——`start`（totalCompanies=Feed 数）、`file`（status downloaded/failed，code=域名、name=Feed 标题）、`queryError`（拉取级失败：门禁拦截/超时）、`done`、`error`；done.summary 采用 CrawlSummary 兼容形状（companies=Feed 数、matched=条目总数、downloaded/skipped/failed=Feed 级计数、bytes、outDir）。reducer 零改动、既有任务类型零行为变化，"可直接消费"从口号变成被端到端测试证明的事实。
+4. **dry-run**：RSS PoC 不提供 dry-run；workbench 创建 rss 任务时 dryRun 标志忽略（按正式采集执行）。
+
+### 采集与治理链
+
+5. **出口门禁（A10，复用 WC-AR-05）**：CLI 校验期逐 URL 过 `egressBlockReason`（含 `localhost.` 尾随点修复后，见决策 14）；运行期 fetch 采用 manual 重定向逐跳守卫（模式照抄 api-connector guardedFetch：每跳先守卫后请求、每 Feed 限 5 跳、303/301/302 方法改写）。
+6. **预算公式（KA3，防 N2 复发）**：`BudgetGate maxCalls = urls.length`——一个 Feed URL 占一次全局配额（无论重定向几跳）；重定向跳数不占全局配额，由每 Feed 5 跳上限约束。断言 `callsMade === urls.length` 且带重定向的 Feed 仍成功。
+7. **快照（KA2）**：data-governance 的 SnapshotStorage **加法扩展**：`saveSnapshot` 增可选 `xml?: string` 入参 → 产物 `content.xml`、formats 含 `'xml'`、content_hash 覆盖 XML 文本；metadata.files 增可选 `xml` 字段。旧调用（不传 xml）行为逐字节不变（对齐 WC-AR-02 的 response_type/truncated 加法先例）。**禁止**把 XML 塞进 html/markdown 字段（元数据谎言）。
+8. **解析器（KA4，保守边界）**：手写字符串解析，冻结样本范围。只处理 5 种 XML 预定义实体（&amp; &lt; &gt; &apos; &quot;）与 CDATA 剥壳；容忍 BOM 与空白。支持 RSS 2.0（item/title/link/pubDate/guid/description）与 Atom（entry/title/href/updated/published/summary）两个冻结变体。未知结构/缺字段 → 该字段 null + missing_reason，原文原样保留；不做 DTD、命名空间展开、外部实体（字符串解析天然免疫 XXE）。**禁止估算发布时间**。
+9. **抽取与证据**：每条目四字段 title/link/published/summary → FieldEvidence（extractorType `'parser'`，sourceText 为 Feed 原文，locateSnippet 定位行号/偏移，confidence 1.0 仅当定位命中，否则 0 并记 missing_reason）；recordId 由条目 link/guid 派生稳定哈希。产物：records.jsonl、evidences.jsonl、evidence.sqlite（EvidenceIndexStore）。
+10. **交付**：`createAndSaveDeliveryManifest`（sourceType `'rss'`），schema 字段集 = recordId/feedUrl/title/link/published/summary/qualityStatus/missingReason；limitations 至少含"冻结样本范围的手写解析器""不抓取条目正文与附件""发布时间不估算"；operations 记 `{ backend: 'rss_native_fetch' }`。manifest 可被既有 verifyDeliveryPackage 核验。
+11. **内容检查（A05）**：响应非 Feed（如挑战页/HTML）→ 该 Feed 标 failed（reason 注明"响应不是合法 Feed"），不当作空 Feed 静默成功。
+12. **条目链接不跟随（数据流声明）**：抽取层只读原文字段，任何条目 link 不发起网络请求（由设计保证 + 测试断言 fetch 调用数 == Feed 数）。
+
+### workbench 接入（全部加法）
+
+13. **参数与分发**：task-params 增 `RssTaskParams`（sourceType 'rss'、name、urls 1–5、limit、deadlineMs 可选）与 SourceType `'rss'`；`validateRssParams`（urls 非空且 ≤5、逐一经出口门禁、limit 正整数 ≤500、deadlineMs 正整数；"URL 域白名单"语义 = **任务即白名单**：仅访问任务中显式批准的 Feed URL，数据流声明与采纳文档 §6 一致）；buildCrawlerSpawnSpec 增 rss 分支（argv 无任何凭据）；queue 的 outDir 映射增 rss → rss-collector 目录；summarizeTask/getTaskCategory/CATEGORY_LABELS 增 rss 类目。workbench 增 `rss-collector: workspace:*` 依赖。**reducer 零改动；COLLECTOR_SCENARIOS 零改动（场景入口默认收起，放开 = WC-AR-06）**。
+
+### 递延项处置（提案逃生条款触发）
+
+14. **N1 修复带入本批**：egressBlockReason 主机名归一化剥尾随点（`localhost.`、`foo.localhost.` 拦截）——红队认定其阻塞本批 A10 验收正确性；**N3 顺带**：删除 `::ffff:` 点分 mapped 死代码分支（行为零变化，防潜伏 bug）。N2（api-connector 预算定容）/N4/N5/N6 维持递延（N2 的防复发已由决策 6 在新包内解决）。
 
 ## Testing Decisions
 
-好测试标准：只测外部可观察行为（任务终态、进程存活、校验错误清单、argv 内容）；沿用既有测试基建——真子进程 fixtures（fake/slow/stubborn-crawler.mjs 模式）、Runner fake seam（queue.test.ts:27-51）、waitFor 轮询（queue.test.ts:65-72）；毫秒级超时参数保证不 flaky（既有 SIGKILL 用例 135ms 稳定，本仓无 CI 仅本地跑）。
-
-- **runner 超时**：新增 `hang-forever.mjs` fixture + `timeoutMs: 200` → 断言任务终态 failed、事件流有终态、fixture 进程不存活（pidfile 或 `process.kill(pid, 0)` ESRCH 轮询）。
-- **进程组**：fixture spawn 孙进程并写 pidfile、emit ready 行 → cancel → 轮询孙进程 pid 至 ESRCH。
-- **出口守卫**：data-governance 纯函数参数化用例（上列地址族 + 公网对照 + 十进制/十六进制变体）；workbench 校验测试断言中文拒绝；cninfo CLI 校验期对 CNINFO_ORIGIN 的守卫用例。
-- **重定向**：api-connector 引擎测试用本地 server 302→`127.0.0.1`，断言被拦。
-- **argv**：`buildCrawlerSpawnSpec` web-scraper 分支断言 argv 不含 apiKey 值且 env 含 `FIRECRAWL_API_KEY`（改写既有 runner-dispatch 断言）；爬虫端 env 回退路径功能测试。
-- **重启边缘**：queue 重启恢复模式（176-194 行先例）+ 带脱敏 apiKey 的 queued 任务 → failed。
+- **好测试标准**：只测外部可观察行为（NDJSON 输出行、落盘文件、终态、进程行为），不测内部实现细节；每个验收点至少一条负向用例。红队要求 **RSS 冻结样本 ≥20 用例**，分布如下（合计 26+，全部本地化，无外网）：
+  - **解析器纯函数（10）**：RSS2.0 正常、Atom 变体、合法空 Feed（A06）、截断样本（A07）、CDATA、5 实体解转义、缺 title/link/published（null+missing_reason，A14）、BOM+空白、带注释/未知标签的漂移样本、每用例附 locateSnippet 回验断言（sourceText 偏移命中原文）。
+  - **采集编排（8）**：正常采集落盘（content.xml + metadata 哈希 + 双时间戳）、404/500 → failed、deadline 到点 → done 收尾（failed 计入，非外层 kill，KA5）、302→公网 逐跳跟随成功、302→私网 拦截（A10）、校验期私网/`localhost.` URL 拒绝（A10+N1）、挑战页/HTML 响应 → failed 且注 reason（A05）、预算公式（重定向 Feed 成功且 callsMade==urls.length，KA3）+ 条目链接零跟随断言（A12/A20）。
+  - **manifest/交付（2）**：manifest 生成含 schema/limitations/operations；verifyDeliveryPackage 核验通过。
+  - **CLI（2）**：-h 帮助零退出；非法参数 → error 事件 + 非零退出。
+  - **A09（1）**：条目字段含脚本/伪协议内容时作为纯数据保留原样（无执行面）。
+  - **workbench（4）**：validateRssParams 单元（>5 URL 拒绝、私网拒绝）；spawn spec 单元（rss 分支 argv 无凭据）；端到端 2 Feed 一成一败 → 终态 partial + counts/failures 如实（KA1 裁决的证明用例）；类目标签。
+  - **egress（2）**：N1 探针（`http://localhost./`、`http://foo.localhost./` 拦截）；N3 回归（`::ffff:` 探针全拦截 + 全量旧用例不回退）。
+- **测试基建复用**：本地 HTTP 假服务器（cninfo/firecrawl 先例）、fetchFn 注入 seam（api-connector engine 先例）、冻结样本以 fixture 文件存 `test/fixtures/*.xml`。
+- **模块与先例**：rss-collector 新测试文件对齐三爬虫命名；data-governance 扩展用既有 governance.test.ts 追加；workbench 用既有 task-params/api/runner-dispatch 测试文件追加。
+- **全量门禁**：`pnpm test && pnpm typecheck && pnpm build`（新包被 workspace glob 自动纳入 -r 递归）。
 
 ## Out of Scope
 
-- api-connector `request.headers` 的 argv/落盘凭据泄漏（决策 8 记录排除理由，凭据治理专项）。
-- localStorage 明文凭据、process.env 重启即失（采纳文档 §8 未列入 WC-AR-05，同属凭据专项）。
-- DNS rebinding 防护；web-scraper 云端重定向约束；服务 SIGINT 关停清理；Windows 进程组语义。
-- RSS 渠道本身（WC-AR-04）。
+- WC-AR-06 的全部内容：场景入口放开、来源类型/限制声明展示、A 用例固化为常规回归包。
+- 条目正文/附件抓取（需要时另立 web-scraper 任务）；RSS dry-run/preview 模式。
+- XML 解析库引入评估（正式化时再议）；真实公网 Feed 的长期漂移适配。
+- 递延项 N2（api-connector 预算定容修复）、N4、N5、N6。
+- 平台级 Feed 域名白名单配置面（PoC 语义 = 任务即白名单）。
+- DNS rebinding 防护（与既有爬虫一致的已声明限制）。
 
 ## Further Notes
 
-- 验收口径映射：A02 通用部分=决策 1+2；A10=决策 3+4+5（重定向）；argv=决策 6；既有取消测试不回退 + runner-dispatch 断言反转=决策 6 的同批改写。
+- 红队 KA1–KA5 与范围裁决（N1/N3 带入）已全部吸收：KA1→决策 3，KA2→决策 7，KA3→决策 6，KA4→决策 8，KA5→决策 2，N1/N3→决策 14。
+- 降级声明：本批红队为主代理内联执行（子代理两次 429 限流后被停止），对抗距离弱于结构性独立评审，DONE 总结将披露。
+- pnpm-workspace `crawlers/*` glob 自动纳入新包，无需改 workspace 配置；workbench 需 `pnpm install` 刷新 lockfile（新增 workspace 链接）。
 
----
+## PRD Diff Gate（auto 模式，2026-10-15）
 
-## PRD diff gate 记录（auto 模式）
+相对 proposal.md 的增量/裁决清单（未重述双方一致项）：
 
-相对 proposal.md 的 diff（全部纯增量/开放问题裁决，无改变或丢弃提案已定决策，自批准）：
+1. **事件协议类型名裁决（决策 3）**：提案括号内 firecrawl 类型名清单为描述性举例（且与 firecrawl 实际代码不符——实际为 `scrape_failed` 而非 `failed`）；PRD 保留规范的规范内容（6 类协议 + reducer 可直接消费），类型名落定为 reducer 已消费方言。**分类：对不一致决策的细化裁决，非变更**——提案两句按字面互斥（红队 KA1 证明），裁决满足其目标句。自批准理由记录于此；如用户不认可可回退。
+2. SnapshotStorage 加法扩展 xml 字段（红队 KA2 条件，提案未预见的必要前置）——纯增量。
+3. 预算公式钉死：maxCalls=urls.length、重定向跳数不占全局配额、每 Feed 限 5 跳（提案开放问题落定，防 N2 复发）——纯增量。
+4. deadline-ms 定整任务级、默认 60000（开放问题落定）——纯增量。
+5. N1+N3 修复带入本批（提案逃生条款预先授权 + 红队认定 A10 阻塞）——提案内已授权的范围调整。
+6. 冻结样本 26+ 用例分布与 fixture 形态（本地 HTTP server + test/fixtures/*.xml）（开放问题落定）——纯增量。
+7. 场景入口"默认收起"落定为 COLLECTOR_SCENARIOS 零改动、UI 卡片留 WC-AR-06（开放问题落定）——纯增量。
+8. RSS 不支持 dry-run、workbench 忽略其 dryRun 标志（提案未提及）——纯增量。
+9. "URL 域白名单"语义 = 任务即白名单（≤5 显式批准 URL；采纳文档数据流声明"仅访问任务中批准的 Feed 域名"的直读）——纯增量澄清。
+10. A05 非 Feed 响应检测、A09/A12 断言形态具体化（提案约束段已列方向）——纯增量。
 
-1. api-connector headers 泄漏的显式排除理由（红队 GO 条件 1；提案决策 4 本就限定 web-scraper apiKey，此处补叙事完整性，范围不变）。
-2. 验收 3 可测化（红队 GO 条件 2）：cninfo 对 CNINFO_ORIGIN 应用同一守卫以兑现"对所有爬虫生效"；baseUrl 豁免（非"采集目标 URL"语义）；web-scraper 云端重定向记录为已知限制。
-3. 新增决策 7：重启后带脱敏假密钥的 queued 任务标 failed（红队 KA4，提案未提及的边缘，纯增量修复）。
-4. 超时默认值 60min + 任务参数 timeoutMs 覆盖（裁决提案开放问题 1；本机无时长数据，取宽裕默认防误杀）。
-5. api-connector 引擎 redirect: 'manual' 逐跳重检（裁决提案开放问题 2 的重定向维度；A10 行含"重定向越界"）。
-6. runner-dispatch.test.ts:110-136 的 argv 断言反转列入"不回退"同批改写清单（红队 GO 条件 3）。
-
----
+无任何条目变更或丢弃 proposal.md 的已定决策；无需升级。
 
 ## GRILL 决议附录
 
-### Round 1（author-blind 子代理，7 个问题包，主代理核验关键证据后全部采用推荐答案）
+### Round 1（作者盲审子代理 9 包，主代理逐包核验后全采纳，2026-10-15）
 
-1. **Q1 cninfo 守卫与既有 e2e 冲突**：引入显式豁免 env `CNINFO_ALLOW_PRIVATE_ORIGIN=1`（先例：http.ts:28 的 env override = 本地测试模式惯例）；`CNINFO_ORIGIN` 与 `CNINFO_STATIC_ORIGIN`（cninfo.ts:7-8，两个都是请求发起对象）一并纳入守卫；既有两个 e2e 测试文件 env 各加豁免行，另写正向拒绝用例。
-2. **Q2 timeoutMs 入口**：扩展 `normalizeParams`（tasks.ts:14-96）三个分支透传 `timeoutMs`（仅 typeof number 保留），校验正整数、不设上限；UI 本包不做；`makeCrawlerRunner`（runner.ts:172-176）把 `task.params.timeoutMs` 传入 spawnRunner opts。注：schemaVersion 同被 normalizeParams 剥离，属既有 seam 盲点，本包只透传 timeoutMs（schemaVersion 零生产者，无影响）。
-3. **Q3 超时终态可观测性**：超时触发时 runner 先发结构化事件 `{"type":"error","message":"任务超时（N ms），已终止子进程"}`（reducer 置 failed 并写清 task.error），随后走进程组 SIGTERM→SIGKILL；done 不 reject（保持 SpawnHandle 既有不变式），onProcessDone 兜底不覆盖。
-4. **Q4 下载路径纳入守卫**：api-connector 两条 fetch（分页 engine.ts:162 + 附件下载 :242）都改 redirect manual 逐跳重检；`downloadUrl` 首跳也检查（响应可控的二阶 SSRF 向量）；方法改写语义 = 303→GET、301/302 POST→GET；每跳计入 budgetGate。
-5. **Q5 守卫严格解析器**：`new URL` 归一（含 `{{...}}` 模板占位替换）→ 协议白名单仅 http/https（其余含 file:/data: 一律拒绝）→ host 解析（剥 `[]`、zone-id、十/十六/八进制/短格式 IPv4、IPv6 含 `::ffff:` mapped、`fc00::/7`、`fe80::/10`、`::`、全段 `0.0.0.0/8`）→ CIDR 判定；拒绝文案分两种（"仅支持 http/https URL" / "目标地址指向内网/回环，已被出口门禁拦截"）；基于 `new URL` 的 host 字段防 userinfo 欺骗。**机械前置**：workbench package.json 新增 `data-governance: workspace:*` 依赖；data-governance exports map 注册 `./egress` 子路径。
-6. **Q6 重启脱敏判定**：init 时凡 `sourceType==='web-scraper'` 且 status queued 且 `params.apiKey` 含 `****` → failed，`error: '检测到重启前残留的脱敏密钥，密钥不随服务重启保留，请重新提交任务'`；mock 不豁免；照抄 init 既有 running→failed 模式（queue.ts:56-65）+ persist。
-7. **Q7 detached 的 Ctrl-C 行为 delta 记录**：detached 后终端 SIGINT 不再连带杀爬虫（爬虫成孤儿）；本包不做关停清理，PRD 已知限制明确记录该行为回退；最小清理（SIGINT handler 调 cancel）留作紧随的独立小改。
+主代理对两处新发现做了独立实证（evidence 路由只读 md/html；firecrawl engine 快照布局与消费端不一致）后采纳。无任何包与 proposal 已定决策冲突；无需升级。
 
-### Round 2（主代理，3 个问题包）
+- **G1（R1-Q1）normalizeParams 增 rss 分支**（PRD 决策 13 的漏项，POST 创建链路）：钳制 name（缺省 `'RSS Feed 采集'`）、urls（字符串数组 trim+去空）、limit/deadlineMs/timeoutMs（number 透传，越界交 validateRssParams 拒绝）、未知字段丢弃，镜像 web-scraper 分支形态。
+- **G2（R1-Q2）/snapshot-content 增 xml 读取**：加法扩展——`format=xml` 显式请求，或 md/html 均不存在时回退读 content.xml；md/html 行为零变化。否则字段级证据指向的 XML 原文在工作台不可回看，击穿"可回验"核心主张。
+- **G3（R1-Q3）e2e 门禁豁免通道**：rss CLI 增 `RSS_ALLOW_PRIVATE_ORIGIN=1` 测试豁免（镜像 cninfo 先例，仅绕过私网/回环判定，协议白名单仍生效）；workbench 的 validateRssParams 不加豁免；workbench e2e 直驱 TaskQueue + makeCrawlerRunner 真实 spawn rss CLI（豁免经 env 继承）；保留"无豁免时 CLI 拒绝私网"负向用例。
+- **G4（R1-Q4）快照布局钉死 + firecrawl 地雷只标注不修**：RSS 快照落 `outDir/snapshots/<snapshotId>/{content.xml, metadata.json}`（`new SnapshotStorage(path.join(outDir, 'snapshots'))`），records/evidences/evidence.sqlite/manifest 在 outDir 根，manifest.files 增 `snapshotsDir: 'snapshots/'`。已实证 firecrawl engine 写顶层而消费端读 `snapshots/` 子目录（engine.ts:19 vs main.ts:199）——**既有地雷，本批不修**（不改既有爬虫行为），记入 handoff 递延。
+- **G5（R1-Q5）事件分界**：按"是否取得 HTTP 响应"分界——门禁拦截/网络错/超时/超跳数 → `queryError`（target=URL）；取得响应但不可用（404/500/A05 非 Feed）→ `file status='failed'`（code=域名、name 无标题时用 host、reason 注明）；成功落盘 → `file status='downloaded'`。每 Feed 拉取前发 `company`（index/total/code=host/name=host，不猜标题）；`start` 恒带 `dryRun:false`。
+- **G6（R1-Q6）参数边界一揽子**：urls trim 后精确重复 → 校验报错拒绝（CLI 同）；limit=每 Feed 条目上限；spawn 仅当 params.deadlineMs 定义时传 `--deadline-ms`（缺省 CLI 默认 60s），与 timeoutMs 硬熔断双层独立不自动 clamp；创建 rss 任务时 dryRun 一律钳制落库 false（标题/classifyDone/clearPreviews 三处免特例）。
+- **G7（R1-Q7）recordId 与质量口径**：前像优先级 link（绝对化）> guid > 条目原文切片；`recordId = 'rss_' + sha256(前像)`（hex 不截断）；同任务重复 recordId 保留多条（limitations 声明"跨 Feed 转载不去重"）。qualityStatus `'valid' | 'missing_field'`：title 与 link 均非空 → valid，否则 missing_field + `missingReason='FIELD_NOT_IN_FEED:<字段>'`；published/summary 缺失只走字段级 null+missing_reason 不降级；manifest 直传计数，不调 calculateQualityMetrics（避 missing_price 语义污染）。
+- **G8（R1-Q8）解析器输入假设**：判型与子标签只认无前缀小写字面标签（`<rss>`/`<feed>`，其余整 Feed failed）；带前缀标签（atom:link/dc:date）按未知标签走漂移路径（字段 null+missing_reason）；Atom link 取第一个 rel 缺省或 alternate 的 href，无匹配取第一个 link，全无 → null；published 只认 RSS pubDate/Atom published，**不回退 updated**；FieldEvidence 的定位 snippet 用**解码前原文切片**（value 才是解码后文本），保证 locateSnippet 逐字命中。
+- **G9（R1-Q9）CLI 契约**：`summary.failed > 0` → exit 1（对齐 cninfo/api-connector）；默认（非 --json）模式镜像 api-connector textReporter：逐 Feed 一行 + 结尾摘要，断言无 JSON 行泄漏；逐 Feed 串行、不加 sleep 参数。
 
-1. **R2-Q1 守卫 API 形态**：新文件 `packages/data-governance/src/egress.ts`，导出 `egressBlockReason(url: string): string | null`（返回中文拦截原因或 null 放行）——校验器 push 消息与引擎抛错两用的最小形态；exports map 加 `"./egress": "./src/egress.ts"`，同时从 index.ts re-export。
-2. **R2-Q2 api-connector manual 重定向细节**：Location 相对解析用 `new URL(location, currentUrl)`；上限 5 跳，超限报错；每跳先 `egressBlockReason` 后请求；保持既有错误分类（`!res.ok` 分支）不变。
-3. **R2-Q3 超时与取消并发**：两者共用同一终止函数（进程组 SIGTERM→宽限→SIGKILL），重复触发幂等（ESRCH 容错），取消与超时并发不产生双重事件/双重终态。
+### Round 2（主代理 3 包，2026-10-15）
 
-Round 2 之后无新增开放问题（预算 2 轮用完），GRILL 收敛。本批无用户可见 UI（Q2 裁决 UI 不做），UI-GATE 不适用。
+Round 1 后残余缺口的最后落定：
+
+- **G10 截断/空 Feed/条目语义**：截断样本（A07）= 解析器丢弃无闭合标签的尾部不完整条目、保留完整条目、快照 metadata.truncated=true、manifest limitations 注明"Feed 可能截断"；合法空 Feed（A06）= 该 Feed `file downloaded`（matched=0 不是失败）；条目按原文出现顺序、`--limit` 截前 N（每 Feed 口径，G6）；done.summary.bytes = 各 Feed 原文字节总和。
+- **G11 事件收尾协议**：校验期失败（参数非法/私网 URL）→ 仅发 `error` 事件 + exit 非零，不发 done（镜像 cninfo/api-connector）；运行期单 Feed 失败不中断后续 Feed，最终必发 done；运行期致命错误（outDir 写失败等）→ error + exit 1，不再发 done。
+- **G12 deadline 机制与覆盖语义**：deadline 用 AbortController 实现——到点即 abort 进行中的 fetch（该 Feed 发 queryError，reason='DEADLINE_EXCEEDED'）并阻止启动后续 Feed（未启动的同样 queryError），最终正常发 done 收尾；`--urls` 逗号 join 透传（合法 URL 不含字面逗号，安全）；A16 覆盖语义 = 每次运行快照 id 唯一不覆盖，outDir 级产物按单任务目录语义覆盖写，workbench 场景 taskId 隔离天然满足。
+
+**GRILL 收敛**：Round 2 后无新增开放问题，2 轮收敛。
+
+### 评审周期 1 补记（2026-10-16，REVIEW F1/F2 处置）
+
+- **A13 裁决（修正 Diff Gate 遗记）**：Round 1 后的 PRD 用例分布确实遗漏了 proposal 决策 5 验收枚举中的「取消（A13）」且未在 Diff Gate 记录——属静默丢弃，评审判 blocking 成立。处置：**补用例而非书面豁免**——`apps/workbench/test/rss-e2e.test.ts` 新增「运行中取消」用例（挂起 Feed → 等 start 落日志 → queue.cancel → 终态 canceled、无 done 事件、终态不被改写）。
+- **F2 裁决（决策 10 与 G4 冲突的正式裁决）**：决策 10 指名的 `createAndSaveDeliveryManifest` 无法表达 G4 要求的 `files.snapshotsDir` 与 Feed 级 sourceSummary 计数（helper 的 files 映射与 succeeded/failed 推导固定）。**裁决：以 G4 为准，manifest 手工构造**（镜像 firecrawl pipeline 的既有先例），verifyDeliveryPackage 兼容性由测试证明；helper 扩展留待正式化阶段（递延）。

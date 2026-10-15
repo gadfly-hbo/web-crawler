@@ -32,6 +32,20 @@ function normalizeParams(raw: unknown): TaskParams {
     };
   }
 
+  if (sourceType === 'rss') {
+    const urlsRaw = Array.isArray(obj.urls)
+      ? obj.urls.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean)
+      : [];
+    return {
+      sourceType: 'rss' as const,
+      name: typeof obj.name === 'string' && obj.name.trim() ? obj.name.trim() : 'RSS Feed 采集',
+      urls: urlsRaw,
+      limit: typeof obj.limit === 'number' ? obj.limit : undefined,
+      deadlineMs: typeof obj.deadlineMs === 'number' ? obj.deadlineMs : undefined,
+      timeoutMs: typeof obj.timeoutMs === 'number' ? obj.timeoutMs : undefined,
+    };
+  }
+
   if (sourceType === 'api-connector') {
     const req = (obj.request ?? {}) as Record<string, unknown>;
     const pag = (obj.pagination ?? {}) as Record<string, unknown>;
@@ -111,7 +125,9 @@ export function taskRoutes(deps: AppDeps): Hono {
     const params = normalizeParams(body.params);
     const errors = validateTaskParams(params, listIndustries());
     if (errors.length > 0) return c.json({ errors }, 400);
-    const task = await deps.queue.create(params, Boolean(body.dryRun));
+    // rss 不支持 dry-run（G6）：创建时钳 false，标题/终态分级/清理语义均按正式采集
+    const dryRun = params.sourceType === 'rss' ? false : Boolean(body.dryRun);
+    const task = await deps.queue.create(params, dryRun);
     return c.json(task, 201);
   });
 

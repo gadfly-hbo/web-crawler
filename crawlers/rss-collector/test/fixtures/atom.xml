@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>示例 Atom 源</title>
+  <link rel="self" href="https://blog.example.com/atom.xml"/>
+  <link rel="alternate" href="https://blog.example.com/"/>
+  <updated>2026-10-15T12:00:00Z</updated>
+  <entry>
+    <title>Atom 条目一</title>
+    <link rel="self" href="https://blog.example.com/entries/1?format=atom"/>
+    <link rel="alternate" href="https://blog.example.com/entries/1"/>
+    <id>urn:uuid:aaa-bbb-001</id>
+    <published>2026-10-14T08:00:00Z</published>
+    <updated>2026-10-15T12:00:00Z</updated>
+    <summary>Atom 条目一的摘要。</summary>
+  </entry>
+  <entry>
+    <title type="text">Atom entry two</title>
+    <link href="https://blog.example.com/entries/2"/>
+    <id>urn:uuid:aaa-bbb-002</id>
+    <published>2026-10-15T09:00:00Z</published>
+    <updated>2026-10-15T11:00:00Z</updated>
+    <summary type="html">&lt;p&gt;Second entry summary&lt;/p&gt;</summary>
+  </entry>
+</feed>

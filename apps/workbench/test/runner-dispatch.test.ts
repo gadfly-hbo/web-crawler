@@ -150,3 +150,49 @@ test('buildCrawlerSpawnSpec: 未知 sourceType 抛出友好异常', () => {
   );
 });
 
+
+test('buildCrawlerSpawnSpec: rss 分发到 rss-collector 爬虫，argv 无凭据、--urls 逗号透传', () => {
+  const spec = buildCrawlerSpawnSpec(
+    {
+      params: {
+        sourceType: 'rss',
+        name: '公开资讯',
+        urls: ['https://a.example.com/feed.xml', 'https://b.example.com/atom.xml'],
+        limit: 20,
+        deadlineMs: 30000,
+      },
+      dryRun: false,
+      outDir: path.join(dummyRepoRoot, 'out', 't1'),
+    },
+    dummyRepoRoot,
+  );
+  assert.equal(spec.command, process.execPath);
+  assert.equal(spec.cwd, path.join(dummyRepoRoot, 'crawlers', 'rss-collector'));
+  const entry = path.join(spec.cwd, 'src', 'main.ts');
+  const argStr = spec.args.join(' ');
+  assert.ok(spec.args.includes('--import'));
+  assert.ok(spec.args.includes(entry));
+  assert.ok(spec.args.includes('--json'), '工作台消费 NDJSON 事件流');
+  const urlsIdx = spec.args.indexOf('--urls');
+  assert.equal(spec.args[urlsIdx + 1], 'https://a.example.com/feed.xml,https://b.example.com/atom.xml');
+  const limitIdx = spec.args.indexOf('--limit');
+  assert.equal(spec.args[limitIdx + 1], '20');
+  const deadlineIdx = spec.args.indexOf('--deadline-ms');
+  assert.equal(spec.args[deadlineIdx + 1], '30000');
+  assert.ok(spec.args.includes('-o'));
+  assert.equal(spec.env, undefined, 'rss 无凭据，不注入任何 env');
+  assert.ok(!argStr.includes('--api-key'), 'argv 不得出现密钥参数');
+});
+
+test('buildCrawlerSpawnSpec: rss 未设置 limit/deadlineMs 时不传对应旗标', () => {
+  const spec = buildCrawlerSpawnSpec(
+    {
+      params: { sourceType: 'rss', name: 'x', urls: ['https://a.example.com/f'] },
+      dryRun: false,
+      outDir: path.join(dummyRepoRoot, 'out', 't2'),
+    },
+    dummyRepoRoot,
+  );
+  assert.ok(!spec.args.includes('--limit'));
+  assert.ok(!spec.args.includes('--deadline-ms'));
+});

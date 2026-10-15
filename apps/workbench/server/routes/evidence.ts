@@ -138,11 +138,15 @@ export function evidenceRoutes(deps: AppDeps): Hono {
 
     const mdPath = path.join(snapshotDir, 'content.md');
     const htmlPath = path.join(snapshotDir, 'content.html');
+    const xmlPath = path.join(snapshotDir, 'content.xml');
 
     let content = '';
     let format = preferFormat;
 
-    if (preferFormat === 'markdown' && existsSync(mdPath)) {
+    if (preferFormat === 'xml' && existsSync(xmlPath)) {
+      content = await fs.readFile(xmlPath, 'utf8');
+      format = 'xml';
+    } else if (preferFormat === 'markdown' && existsSync(mdPath)) {
       content = await fs.readFile(mdPath, 'utf8');
       format = 'markdown';
     } else if (existsSync(htmlPath)) {
@@ -151,6 +155,10 @@ export function evidenceRoutes(deps: AppDeps): Hono {
     } else if (existsSync(mdPath)) {
       content = await fs.readFile(mdPath, 'utf8');
       format = 'markdown';
+    } else if (existsSync(xmlPath)) {
+      // md/html 均不存在时回退 xml（RSS 快照形态）
+      content = await fs.readFile(xmlPath, 'utf8');
+      format = 'xml';
     } else {
       return c.json({ error: '快照内容文件不存在' }, 404);
     }

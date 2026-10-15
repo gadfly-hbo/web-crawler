@@ -19,7 +19,8 @@
     "data-governance": "workspace:*",
     "hono": "^4.10.7",
     "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "react-dom": "^19.2.1",
+    "rss-collector": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

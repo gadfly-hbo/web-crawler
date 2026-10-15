@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>缺字段样本源</title>
+    <link>https://missing.example.com/</link>
+    <description>冻结样本：各条目缺不同字段（A14 字段级缺失）</description>
+    <item>
+      <link>https://missing.example.com/no-title</link>
+      <pubDate>Wed, 14 Oct 2026 08:00:00 GMT</pubDate>
+      <description>该条目缺 title。</description>
+    </item>
+    <item>
+      <title>缺 link 的条目</title>
+      <pubDate>Wed, 14 Oct 2026 09:00:00 GMT</pubDate>
+      <description>该条目缺 link 与 guid。</description>
+    </item>
+    <item>
+      <title>缺发布时间的条目</title>
+      <link>https://missing.example.com/no-pubdate</link>
+      <guid>urn:example:no-pubdate</guid>
+      <description>该条目缺 pubDate，禁止估算。</description>
+    </item>
+  </channel>
+</rss>

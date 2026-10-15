@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>CDATA 与实体样本</title>
+    <link>https://cdata.example.com/</link>
+    <description>冻结样本：CDATA 壳与五种预定义实体</description>
+    <item>
+      <title>A &amp; B 公司 &lt;年报&gt; 发布&apos;新&apos;版本&quot;2.0&quot;</title>
+      <link>https://cdata.example.com/1</link>
+      <pubDate>Wed, 14 Oct 2026 08:00:00 GMT</pubDate>
+      <description><![CDATA[摘要中包含 <b>加粗</b> 与 & 符号，整体在 CDATA 壳内。]]></description>
+    </item>
+    <item>
+      <title><![CDATA[纯 CDATA 标题 <未转义>]]></title>
+      <link>https://cdata.example.com/2</link>
+      <pubDate>Wed, 14 Oct 2026 09:00:00 GMT</pubDate>
+      <description>普通描述。</description>
+    </item>
+  </channel>
+</rss>

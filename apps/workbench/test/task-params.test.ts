@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  CATEGORY_LABELS,
   DEFAULT_SLEEP_MS,
   MIN_SLEEP_MS,
+  getTaskCategory,
   paramsToCliArgs,
   summarizeTask,
   validateTaskParams,
@@ -199,3 +201,41 @@ test('web-scraper 私网/回环采集 URL 被出口门禁拒绝，baseUrl（自�
 });
 
 
+
+test('rss 任务参数校验：合法通过；私网/重复/超 5 个/limit 越界拒绝', () => {
+  const ok = {
+    sourceType: 'rss' as const,
+    name: '公开资讯',
+    urls: ['https://news.example.com/feed.xml', 'https://blog.example.com/atom.xml'],
+    limit: 20,
+    deadlineMs: 60000,
+  };
+  assert.deepEqual(validateTaskParams(ok), []);
+
+  const privateUrl = { sourceType: 'rss' as const, name: 't', urls: ['http://10.0.0.1/feed.xml'] };
+  assert.ok(validateTaskParams(privateUrl).some((e) => e.includes('内网')));
+
+  const trailingDot = { sourceType: 'rss' as const, name: 't', urls: ['http://localhost./feed.xml'] };
+  assert.ok(validateTaskParams(trailingDot).some((e) => e.includes('内网')), '尾随点回环不得绕过');
+
+  const dup = { sourceType: 'rss' as const, name: 't', urls: ['https://a.example.com/f', 'https://a.example.com/f'] };
+  assert.ok(validateTaskParams(dup).some((e) => e.includes('重复')));
+
+  const tooMany = {
+    sourceType: 'rss' as const,
+    name: 't',
+    urls: ['https://f1.example.com/x', 'https://f2.example.com/x', 'https://f3.example.com/x', 'https://f4.example.com/x', 'https://f5.example.com/x', 'https://f6.example.com/x'],
+  };
+  assert.ok(validateTaskParams(tooMany).some((e) => e.includes('5')));
+
+  const badLimit = { sourceType: 'rss' as const, name: 't', urls: ['https://a.example.com/f'], limit: 501 };
+  assert.ok(validateTaskParams(badLimit).some((e) => e.includes('limit')));
+});
+
+test('rss 任务摘要与类目', () => {
+  const p = { sourceType: 'rss' as const, name: '行业资讯', urls: ['https://a.example.com/f'] };
+  assert.equal(summarizeTask(p, false), 'RSS 采集 · 行业资讯');
+  assert.equal(summarizeTask(p, true), 'RSS 采集 · 行业资讯', 'rss 不支持 dry-run，标题不带预览前缀');
+  assert.equal(getTaskCategory(p), 'rss');
+  assert.ok(CATEGORY_LABELS.rss.label.length > 0);
+});

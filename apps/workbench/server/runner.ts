@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-import { paramsToCliArgs, type CninfoTaskParams, type TaskParams, type WebScraperParams } from '../shared/task-params.js';
+import { paramsToCliArgs, type CninfoTaskParams, type RssTaskParams, type TaskParams, type WebScraperParams } from '../shared/task-params.js';
 import type { Runner } from './queue.js';
 
 export interface SpawnSpec {
@@ -152,6 +152,33 @@ export function buildCrawlerSpawnSpec(
     ];
     if (task.dryRun) {
       args.push('--dry-run');
+    }
+    return {
+      command: process.execPath,
+      args,
+      cwd: crawlerDir,
+    };
+  }
+
+  if (sourceType === 'rss') {
+    const crawlerDir = path.join(repoRoot, 'crawlers', 'rss-collector');
+    const entry = path.join(crawlerDir, 'src', 'main.ts');
+    const rssParams = task.params as RssTaskParams;
+    const args = [
+      '--import',
+      'tsx',
+      entry,
+      '--json',
+      '--urls',
+      rssParams.urls.join(','),
+      '-o',
+      task.outDir,
+    ];
+    if (rssParams.limit !== undefined) {
+      args.push('--limit', String(rssParams.limit));
+    }
+    if (rssParams.deadlineMs !== undefined) {
+      args.push('--deadline-ms', String(rssParams.deadlineMs));
     }
     return {
       command: process.execPath,

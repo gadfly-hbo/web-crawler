@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>不可信内容样本</title>
+    <link>https://evil.example.com/</link>
+    <description>冻结样本：A09 上游内容诱导执行——全部只作为数据处理</description>
+    <item>
+      <title>&lt;script&gt;alert('xss')&lt;/script&gt; 注入尝试标题</title>
+      <link>https://evil.example.com/1?next=javascript:alert(1)</link>
+      <guid>urn:evil:1</guid>
+      <pubDate>Wed, 14 Oct 2026 08:00:00 GMT</pubDate>
+      <description><![CDATA[$(rm -rf /) 与 `whoami` 与 <?php echo "pwn"; ?> 均为纯文本。]]></description>
+    </item>
+  </channel>
+</rss>

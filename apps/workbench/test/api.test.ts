@@ -266,6 +266,52 @@ test('POST /api/tasks：非法 web-scraper 参数拒绝并返回中文错误', a
   });
 });
 
+test('POST /api/tasks：合法 rss 参数创建成功（normalizeParams 分支 + dryRun 钳 false），输出目录隔离到 rss-collector', async () => {
+  await withApp(async (app) => {
+    const rssPayload = {
+      sourceType: 'rss',
+      name: '  公开资讯  ',
+      urls: ['  https://news.example.com/feed.xml ', 'https://blog.example.com/atom.xml', ''],
+      limit: 20,
+      deadlineMs: 60000,
+      timeoutMs: 120000,
+      unknownExtra: '丢弃我',
+    };
+    const res = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: rssPayload, dryRun: true }),
+    });
+    assert.equal(res.status, 201);
+    const task = await j(res);
+    assert.equal(task.params.sourceType, 'rss');
+    assert.equal(task.params.name, '公开资讯', 'name 需 trim');
+    assert.deepEqual(task.params.urls, ['https://news.example.com/feed.xml', 'https://blog.example.com/atom.xml'], 'urls trim + 去空');
+    assert.equal(task.params.limit, 20);
+    assert.equal(task.params.timeoutMs, 120000);
+    assert.equal(task.params.unknownExtra, undefined, '未知字段丢弃');
+    assert.equal(task.dryRun, false, 'rss 不支持 dry-run，创建时钳 false（G6）');
+    assert.ok(task.outDir.includes('rss-collector'), '输出目录按来源隔离');
+    assert.equal(task.title, 'RSS 采集 · 公开资讯');
+  });
+});
+
+test('POST /api/tasks：非法 rss 参数（私网 URL）返回 400', async () => {
+  await withApp(async (app) => {
+    const res = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        params: { sourceType: 'rss', name: 't', urls: ['http://127.0.0.1:9/feed.xml'] },
+        dryRun: false,
+      }),
+    });
+    assert.equal(res.status, 400);
+    const body = await j(res);
+    assert.ok(body.errors.some((e: string) => e.includes('内网')));
+  });
+});
+
 test('DELETE /api/task/:id：删除已结束任务成功；不存在返回 404', async () => {
   await withApp(async (app) => {
     const createRes = await app.request('/api/tasks', {
