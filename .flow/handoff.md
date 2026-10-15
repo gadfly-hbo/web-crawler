@@ -1,38 +1,42 @@
-# dev-flow 交接卡 — WC-AR-05 执行治理增量（DONE 2026-10-15）
+# dev-flow 交接卡 — WC-AR-04 RSS 适配器 PoC（DONE 2026-10-16）
 
 ## 本批交付
 
-- 提交 `ca9a6a6`（main，已推送 origin）：29 文件，+923/−193。
-- 出口守卫：`packages/data-governance/src/egress.ts` 的 `egressBlockReason(url)`，已接线至 api-connector（校验期 + engine 逐跳重定向）、workbench web-scraper 校验、cninfo 两个 ORIGIN。
-- runner 治理：任务级超时（默认 60min、`timeoutMs` 覆盖、超时先发结构化 error 事件）、detached 进程组 + 负 pid killGroup、幂等 terminate；`--api-key` 从 argv 消除（纯 env 注入）。
-- queue 重启恢复：queued 任务脱敏密钥残留 → 直接标 failed。
-- 验证：`pnpm test && pnpm typecheck && pnpm build` exit 0，151/151（基线 138+13），提交前 fail-closed 复跑一致。
+- 提交 `359816e`（main，已推送 origin）：44 文件，+2725/−326。
+- **新包 `crawlers/rss-collector`**：公开 RSS/Atom 只读采集——快照（content.xml + 哈希 + 双时间戳 + truncated 标记）→ 规则式抽取（title/link/published/summary，缺失 null 不估算）→ 字段级证据（locateSnippet 解码前原文切片，回验命中 confidence 1.0）→ manifest（schema/limitations/operations/snapshotsDir，verifyDeliveryPackage 可核验）→ workbench 展示（进度/失败清单/终态分级/快照 XML 回看）。
+- **治理复用实证**：出口门禁（校验期 + manual 重定向逐跳守卫，RSS_ALLOW_PRIVATE_ORIGIN 仅测试豁免）、任务级 timeoutMs、进程组取消（A13 e2e）、预算门禁（maxCalls=urls.length，重定向不占配额——N2 防复发公式）。
+- **data-governance 加法**：SnapshotStorage 可选 xml 字段；egress 尾随点修复（N1）+ `::ffff:` 死分支删除（N3）。
+- **验证**：`pnpm test && pnpm typecheck && pnpm build` 三段 exit 0，**194/194**（governance 10 + firecrawl 27 + api-connector 20 + rss 32 + cninfo 14 + workbench 91；基线 151 + 43），SHIP 前 fail-closed 复跑一致；评审 3 轮（FAIL/FAIL/PASS）独立复跑均逐包一致。
 
-## 下一批前置（WC-AR-04 RSS PoC）
+## 下一批前置（WC-AR-06 工作台体验与回归包）
 
-本批已为 WC-AR-04 备齐执行层治理，下一批可直接复用：
+依赖 WC-AR-04 已就绪，验收 = 主线样板 + RSS 样板双回归绿：
 
-- RSS/HTML 抓取器采集 URL 一律经 `data-governance/egress` 的 `egressBlockReason` 守卫（与 T2 同一接法，校验期调用即可）。
-- 若 RSS 源有重定向，参考 api-connector `engine.ts` 的 `guardedFetch` 模式（manual 逐跳 + 5 跳上限 + 每跳计 budget）。
-- 凭据一律 env 注入，禁止进 argv；需要超时时走 `TaskParams.timeoutMs`（已从 API → normalizeParams → runner 端到端贯通）。
+- **RSS 场景入口放开**：`apps/workbench/shared/task-params.ts` 的 `COLLECTOR_SCENARIOS` 当前零改动（本批刻意收起）；放开 = 新增 rss 场景卡 + 新建任务表单（urls 1-5、limit、deadlineMs）。表单校验直接调 `validateRssParams`（workbench 已依赖 rss-collector/domain）。
+- **来源类型/限制声明展示**：后端已备好数据面——`CATEGORY_LABELS.rss`（📡 RSS 资讯 chip）、任务详情面板 rss 分支（Feed 数/条目上限/软超时）、边界声明文案，均在 `App.tsx`/`task-params.ts` 现成可扩展。
+- **A 用例固化为常规回归**：A01（不装 Agent-Reach 可跑）/A18（mock 商品样板端到端）/A19（无隐式外呼）已有测试事实，WC-AR-06 需将其固化为显式回归用例。
+- RSS 创建链路：`POST /api/tasks`（sourceType 'rss'）已端到端可用（dryRun 自动钳 false）。
 
-## 递延项（评审 6 条 non-blocking，均未处理，按建议优先级排序）
+## 递延项（评审记录在案，均 non-blocking/info）
 
-详见 `.flow/review-findings.md`，recheck 判据逐条在内：
+WC-AR-05 遗留 N2（api-connector 预算定容）/N4/N5/N6 维持递延；本批新增：
 
-1. **N2（建议下一批处置）**：每跳计 budget 后 `maxCalls = maxPages + 5` 上限未重新定容，多附件任务可能中途熔断；分页期预算熔断的终态从 failed 降为 partial（行为变化需确认预期）。
-2. **N1**：`egressBlockReason` 未剥尾随点，`http://localhost./` 可绕过字面检查（一行修复 + 探针用例）。
-3. **N3**：`egress.ts:56-63` `::ffff:` 点分 mapped 分支为死代码且若可达有 bug，建议删除。
-4. **N4**：超时回调未查 `canceled`，取消后可能多打一条「任务超时」日志行（一行 `if (canceled) return`）。
-5. **N6**：四处覆盖缺口（5 跳上限、301/302 POST→GET、mock:true 脱敏不豁免、每跳计 budget 断言）。
-6. **N5**：三处小异味（无效别名、`void` 压制解构、魔法字符串耦合）。
+1. **F3**：egress 只剥一个尾随点，`localhost..` 多点形态仍放行（本机 DNS ENOTFOUND 无可达旁路；修复一行 `/\.+$/` + 探针）。
+2. **F2 裁决记录**：manifest 手工构造（非 createAndSaveDeliveryManifest）——helper 无法表达 snapshotsDir 与 Feed 级计数；正式化时评估扩展 helper。
+3. **F4/F5/F6 小异味**：existsFileSync 冗余包装、guardReason 等价分支、feed-parser 永不 null 的返回类型、边界常量三处重复。
+4. **F7**：manual 重定向 3xx 每跳不消费响应体（undici 连接占用，≤5 跳有界）。
+5. **R3(info)**：anyTruncated 置位先于快照落盘的边角顺序；**R3(info 二轮)**：3xx 无 Location 归类为 queryError（reducer 语义等价）。
+6. **firecrawl 布局地雷**（GRILL G4 发现，本批只标注不修）：engine 写快照到 outDir 顶层而消费端读 `outDir/snapshots/`——`--analyze` 路径实际读空目录，属既有缺陷，建议独立小批修复。
 
-## 已知限制（PRD 已声明，非缺陷）
+## 已知限制（PRD 已声明）
 
-- `detached`/负 pid 进程组终止仅 macOS 实证；Linux 理论同源未实测，Windows 不支持负 pid 语义。
-- DNS rebinding 不防（守卫基于 URL 字面主机，不做解析后校验）。
-- Ctrl-C 杀 workbench 后已 spawn 的爬虫成孤儿（GRILL R1-Q7 记录的 delta；关停钩子清理留作后续小改）。
+- 解析器冻结样本范围：真实世界 Feed 变体（命名空间、GBK 编码等）未覆盖，正式化前需评估引入 XML 库。
+- DNS rebinding 不防（与既有爬虫一致）；RSS 无凭据无 LLM，凭据渠道接入前必须先过 WC-AR-00 治理。
 
 ## 流程产物
 
-`.flow/` 下 proposal / red-team / prd（含 GRILL 决议附录）/ tasks（含证据勾选）/ review-findings 均已随 ca9a6a6 入库；state.json 为本机状态（gitignored）。
+`.flow/` 下 proposal / red-team / prd（含 G1-G12 与评审补记）/ tasks（含证据勾选）/ review-findings（3 轮）均已随 359816e 入库；state.json 为本机状态（gitignored）。
+
+## 降级披露
+
+本批红队为主代理内联执行（子代理两次 429 限量后按技能降级），对抗距离弱于结构性独立评审；GRILL Round 1 与三轮 REVIEW 均为 fresh 子代理（其中二轮一次 429 后 resume 成功）。
