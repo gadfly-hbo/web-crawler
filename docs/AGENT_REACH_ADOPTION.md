@@ -4,7 +4,7 @@
 
 | 文档项 | 内容 |
 |---|---|
-| 版本 | v1.0，采纳评审 / ADR / 候选工作包（合并报告 §17.2 六项输出） |
+| 版本 | v1.1，采纳评审 / ADR / 候选工作包（合并报告 §17.2 六项输出）；v1.1 按 WC-AR-02 红队结论修订 §5 契约表 |
 | 日期 | 2026-10-15 |
 | 输入 | 《Agent-Reach 仓库研究与 web-crawl 产品融合方案 v1.0》（外部研究报告，下称"报告"） |
 | 评审对象 | 本仓库实际源码、测试与流程文档（现状核对于 2026-10-15 完成） |
@@ -103,10 +103,12 @@
 
 | 位置 | 增量 | 时机 |
 |---|---|---|
-| `apps/workbench/shared/task-params.ts` | `TaskParams` 增加可选 `schemaVersion?: string`；新增 `SourceType = 'rss'`（WC-AR-04 落地时） | WC-AR-02/04 |
-| `packages/data-governance/src/storage.ts` | `SnapshotMetadata` 增加可选 `backend?: string`（实际执行后端标识，如 `rss_local`/`firecrawl_cloud`）、`responseType?: string`（如 `feed_xml`/`markdown`）、`truncated?: boolean` | WC-AR-02 |
-| `packages/data-governance/src/manifest.ts` | `DeliveryManifest` 增加可选 `limitations?: string[]`（把 analyzer 的 caveats 升格进 manifest，解决 §2.1 缺口）与 `operations?: { backend: string; toolVersion?: string }[]` | WC-AR-02 |
+| `apps/workbench/shared/task-params.ts` | `TaskParams` 联合层增加可选 `schemaVersion?: string`（挂载方式 `(A\|B\|C) & { schemaVersion?: string }`，不动其他包 domain 类型，先例：同文件 `CninfoTaskParams`）；新增 `SourceType = 'rss'`（WC-AR-04 落地时） | WC-AR-02/04 |
+| `packages/data-governance/src/storage.ts` | `SnapshotMetadata` 增加可选 `response_type?: string`（内容文件形态，如 `feed_xml`/`markdown`，随接口现行 snake_case 命名）与 `truncated?: boolean`；**不加 `backend`**——既有 `provider` 字段承载后端标识（取值含 `firecrawl_cloud`/`firecrawl_self_hosted`/`mock_adapter`/未来 `rss_local`），落盘缺失的根因是采集引擎透传缺口，修复透传即可 | WC-AR-02 |
+| `packages/data-governance/src/manifest.ts` | `DeliveryManifest` 增加可选 `limitations?: string[]`（把 analyzer 的 caveats 升格进 manifest，解决 §2.1 缺口）与 `operations?: { backend: string; toolVersion?: string }[]`（从快照 `provider` 去重聚合；旧快照无 provider 时 `operations` 键不存在，而非 `[]`） | WC-AR-02 |
 | 兼容性验证 | 新增回归：无新字段的旧 JSON 照常解析；`verifyDeliveryPackage` 对含新字段的 manifest 照常校验 | WC-AR-02 |
+
+> v1.1 修订说明（2026-10-15，WC-AR-02 红队后）：取消 `backend` 新字段——`SnapshotMetadata.provider` 已存在且已持久化（storage.ts:9/:88），取值集合与拟议 `backend` 恒等，不存在分叉场景；`createAndSaveDeliveryManifest` 生产调用方实为 2 个（cninfo、api-connector），firecrawl 管线的 manifest 为字面量构造（pipeline.ts），填充机制需同时覆盖两种构造路径。
 
 报告 §7.3 的 `ChannelCapability`/`OperationRun` 独立存储 **不建**：能力信息以场景模板元数据 + README 表达，运行审计以既有任务日志 NDJSON（`data/workbench/logs/<id>.ndjson`）+ manifest 为准。出现第二个同构渠道后再评估抽象。
 
