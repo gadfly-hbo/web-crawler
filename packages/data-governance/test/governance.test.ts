@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -105,6 +105,99 @@ test('data-governance: storage 原子快照保存', async () => {
 
     assert.ok(res.metadata.content_hash);
     assert.equal(res.metadata.files.markdown, 'content.md');
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('data-governance: 快照新字段 response_type/truncated 可持久化并读回', async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), 'dg-snap2-'));
+
+  try {
+    const storage = new SnapshotStorage(tmp);
+    const res = await storage.saveSnapshot({
+      targetUrl: 'http://example.com/feed',
+      provider: 'rss_local',
+      markdown: '<rss></rss>',
+      responseType: 'feed_xml',
+      truncated: true,
+    }, 's2');
+
+    assert.equal(res.metadata.response_type, 'feed_xml');
+    assert.equal(res.metadata.truncated, true);
+
+    const raw = JSON.parse(await readFile(path.join(tmp, 's2', 'metadata.json'), 'utf8'));
+    assert.equal(raw.response_type, 'feed_xml');
+    assert.equal(raw.truncated, true);
+
+    // 缺省不填充时落盘 JSON 中键不存在
+    await storage.saveSnapshot({ targetUrl: 'http://example.com', markdown: 'x' }, 's3');
+    const raw2 = JSON.parse(await readFile(path.join(tmp, 's3', 'metadata.json'), 'utf8'));
+    assert.equal('response_type' in raw2, false);
+    assert.equal('truncated' in raw2, false);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('data-governance: manifest 新字段 limitations/operations 持久化、读回并通过校验', async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), 'dg-mf2-'));
+
+  try {
+    const dataFile = path.join(tmp, 'data.jsonl');
+    await writeFile(dataFile, '{"a": 1}\n', 'utf8');
+
+    const manifest = await createAndSaveDeliveryManifest({
+      dir: tmp,
+      datasetId: 'ds2',
+      sourceType: 'test',
+      generatorName: 'test-runner',
+      recordsCount: 1,
+      validCount: 1,
+      filesToSign: ['data.jsonl'],
+      limitations: ['仅示例数据，不构成建议'],
+      operations: [{ backend: 'mock_adapter' }],
+    });
+
+    assert.deepEqual(manifest.limitations, ['仅示例数据，不构成建议']);
+    assert.deepEqual(manifest.operations, [{ backend: 'mock_adapter' }]);
+
+    const check = await verifyDeliveryPackage(tmp);
+    assert.equal(check.valid, true);
+
+    const raw = JSON.parse(await readFile(path.join(tmp, 'manifest.json'), 'utf8'));
+    assert.deepEqual(raw.limitations, ['仅示例数据，不构成建议']);
+    assert.deepEqual(raw.operations, [{ backend: 'mock_adapter' }]);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('data-governance: manifest 空数组归一化为键不存在，不传新参数行为不变', async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), 'dg-mf3-'));
+
+  try {
+    const dataFile = path.join(tmp, 'data.jsonl');
+    await writeFile(dataFile, '{"a": 1}\n', 'utf8');
+
+    await createAndSaveDeliveryManifest({
+      dir: tmp,
+      datasetId: 'ds3',
+      sourceType: 'test',
+      generatorName: 'test-runner',
+      recordsCount: 1,
+      validCount: 1,
+      filesToSign: ['data.jsonl'],
+      limitations: [],
+      operations: [],
+    });
+
+    const raw = JSON.parse(await readFile(path.join(tmp, 'manifest.json'), 'utf8'));
+    assert.equal('limitations' in raw, false);
+    assert.equal('operations' in raw, false);
+
+    const check = await verifyDeliveryPackage(tmp);
+    assert.equal(check.valid, true);
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }

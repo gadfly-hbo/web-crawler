@@ -57,3 +57,25 @@ test('ScraperEngine: 触发完整的事件流并产生快照', async () => {
 
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
+
+test('ScraperEngine: 落盘快照 metadata 含真实 provider（mock_adapter）', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fc-engine-provider-'));
+
+  const engine = new ScraperEngine({
+    outDir: tmpDir,
+    adapter: new MockAcquisitionAdapter([])
+  });
+
+  const summary = await engine.run(['https://example.com/good-1']);
+  assert.equal(summary.succeeded, 1);
+
+  const entries = await fs.readdir(tmpDir, { withFileTypes: true });
+  const snapDir = entries.find((e) => e.isDirectory());
+  assert.ok(snapDir);
+  const metadata = JSON.parse(
+    await fs.readFile(path.join(tmpDir, snapDir.name, 'metadata.json'), 'utf8')
+  );
+  assert.equal(metadata.provider, 'mock_adapter');
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});

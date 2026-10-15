@@ -43,6 +43,8 @@ export interface DeliveryManifest {
   qualityMetrics: DatasetQualityMetrics;
   files: Record<string, string | undefined>;
   checksums: Record<string, string>; // 关键文件 relative_path -> SHA-256
+  limitations?: string[];
+  operations?: { backend: string; toolVersion?: string }[];
 }
 
 /**
@@ -117,6 +119,8 @@ export async function createAndSaveDeliveryManifest(options: {
   filesToSign: string[];
   schemaFields?: DeliveryFieldSchema[];
   evidenceCount?: number;
+  limitations?: string[];
+  operations?: { backend: string; toolVersion?: string }[];
 }): Promise<DeliveryManifest> {
   const {
     dir,
@@ -130,6 +134,8 @@ export async function createAndSaveDeliveryManifest(options: {
     filesToSign,
     schemaFields = [],
     evidenceCount = 0,
+    limitations,
+    operations,
   } = options;
 
   const checksums: Record<string, string> = {};
@@ -169,6 +175,8 @@ export async function createAndSaveDeliveryManifest(options: {
     },
     files: Object.fromEntries(filesToSign.map((f) => [f, f])),
     checksums,
+    limitations: limitations?.length ? limitations : undefined,
+    operations: operations?.length ? operations : undefined,
   };
 
   await fs.writeFile(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');

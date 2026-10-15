@@ -54,7 +54,7 @@ export class ScraperEngine {
         });
 
         if (result.success) {
-          const saved = await this.storage.saveSnapshot(result);
+          const saved = await this.storage.saveSnapshot({ ...result, provider: capabilities.provider });
           succeeded++;
           this.reporter?.({
             type: 'snapshot_saved',

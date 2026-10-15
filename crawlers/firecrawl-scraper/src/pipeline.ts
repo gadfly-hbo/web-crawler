@@ -11,6 +11,15 @@ import {
   generateProductDatasetSchema,
 } from './manifest.js';
 import type { SnapshotMetadata } from './storage.js';
+import type { AcquisitionCapabilities } from './port.js';
+
+// 已知后端白名单：operations 聚合只收敛这些值；'unknown'/键缺失/未识别值一律不产生条目。
+// 新增渠道（如 rss_local）扩展 port.ts 的 provider 联合时需同步更新本集合。
+export const KNOWN_OPERATION_BACKENDS: ReadonlySet<AcquisitionCapabilities['provider']> = new Set([
+  'firecrawl_cloud',
+  'firecrawl_self_hosted',
+  'mock_adapter',
+]);
 
 export interface PipelineResult {
   report: PriceAnalysisReport;
@@ -36,6 +45,7 @@ export async function runProductAnalysisPipeline(
   const evidenceStore = new EvidenceIndexStore(sqliteDbPath);
 
   let totalSnapshots = 0;
+  const seenProviders = new Set<AcquisitionCapabilities['provider']>();
 
   // 读取快照目录
   try {
@@ -50,6 +60,9 @@ export async function runProductAnalysisPipeline(
         const metaContent = await fs.readFile(metaPath, 'utf8');
         const meta = JSON.parse(metaContent) as SnapshotMetadata;
         totalSnapshots++;
+        if (KNOWN_OPERATION_BACKENDS.has(meta.provider as AcquisitionCapabilities['provider'])) {
+          seenProviders.add(meta.provider as AcquisitionCapabilities['provider']);
+        }
 
         let markdown: string | undefined;
         let html: string | undefined;
@@ -114,6 +127,10 @@ export async function runProductAnalysisPipeline(
   await fs.writeFile(path.join(outDir, 'quality_report.json'), JSON.stringify(qualityMetrics, null, 2), 'utf8');
 
   // 8. 计算各关键文件 SHA-256 并生成 DeliveryManifest
+  const operations = [...KNOWN_OPERATION_BACKENDS]
+    .filter((backend) => seenProviders.has(backend))
+    .map((backend) => ({ backend }));
+
   const checksums: Record<string, string> = {};
   const filesToSign = [
     'records.jsonl',
@@ -160,6 +177,8 @@ export async function runProductAnalysisPipeline(
       snapshotsDir: 'snapshots/',
     },
     checksums,
+    limitations: report.caveatsAndLimits.length ? report.caveatsAndLimits : undefined,
+    operations: operations.length ? operations : undefined,
   };
 
   // 9. 落盘 manifest.json

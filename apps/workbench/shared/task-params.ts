@@ -32,7 +32,9 @@ export interface WebScraperParams {
   baseUrl?: string;
 }
 
-export type TaskParams = CninfoTaskParams | ApiConnectorParams | WebScraperParams;
+export type TaskParams = (CninfoTaskParams | ApiConnectorParams | WebScraperParams) & {
+  schemaVersion?: string;
+};
 
 export function validateWebScraperParams(params: WebScraperParams): string[] {
   const errors: string[] = [];
@@ -58,15 +60,23 @@ export function validateTaskParams(
   params: TaskParams,
   knownIndustries?: readonly string[],
 ): string[] {
+  const sharedErrors: string[] = [];
+  if (
+    params.schemaVersion !== undefined &&
+    (typeof params.schemaVersion !== 'string' || !params.schemaVersion.trim())
+  ) {
+    sharedErrors.push('schemaVersion 必须为非空字符串');
+  }
+
   const sourceType = params.sourceType ?? 'cninfo';
   if (sourceType === 'cninfo') {
-    return validateCninfoParams(params as CninfoTaskParams, knownIndustries);
+    return [...sharedErrors, ...validateCninfoParams(params as CninfoTaskParams, knownIndustries)];
   }
   if (sourceType === 'api-connector') {
-    return validateApiConnectorParams(params as ApiConnectorParams);
+    return [...sharedErrors, ...validateApiConnectorParams(params as ApiConnectorParams)];
   }
   if (sourceType === 'web-scraper') {
-    return validateWebScraperParams(params as WebScraperParams);
+    return [...sharedErrors, ...validateWebScraperParams(params as WebScraperParams)];
   }
   return [`不支持的数据源类型: ${(params as any).sourceType}`];
 }

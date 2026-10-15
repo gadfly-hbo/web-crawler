@@ -1,53 +1,42 @@
-# 评审报告（第 2 轮）
+# 评审报告：WC-AR-02 契约增量 rev2（fixed point 5a3a98c，工作区 diff）
 
-**基线提交**: `fe1f933839f0007b069a14e590f870a0a84e6ddb`  
-**结论**: **PASS** (0 阻塞项，0 非阻塞项)
+> 评审执行：全新上下文只读子代理（explore），按 matt-code-review 双轴评审；VERIFY 命令亲自复跑。
 
----
+## Verdict: **PASS**
 
-## 1. 验证命令复核 (Verify Evidence)
+VERIFY 命令亲自复跑：`pnpm test && pnpm typecheck && pnpm build` → **exit 0**。测试 **138/138 全绿**（data-governance 7 + firecrawl-scraper 26 + api-connector 16 + cninfo-reports 13 + workbench 76，fail 0），typecheck 5 项目全过，vite build 成功——**与实现方记录的证据完全一致，无不符**。运行后 `git status` 与评审开始时逐字相同（12 文件），无测试副作用。tasks.md 四个切片的打勾证据（7/7、26/26、76/76、用例名）逐条与实跑输出对上，无虚假证据；diff 范围无超出（12 文件全部在 spec 覆盖面内，cninfo/api-connector 两个构造器调用方零改动，工作区无范围外文件）。
 
-- **执行命令**: `pnpm test && pnpm typecheck && pnpm build`
-- **执行目录**: `/Users/huangbo/Dev/Projects/web-crawler`
-- **退出码**: `0`
-- **验证结果**:
-  - `pnpm test`: **92 tests pass, 0 fail**（`cninfo-reports`: 13 pass；`api-connector`: 16 pass；`workbench`: 63 pass）
-  - `pnpm typecheck`: 0 错误（3 个 workspace package 均通过）
-  - `pnpm build`: Vite 构建成功完成（打包耗时 ~797ms）
-- **与记录证据吻合度**: 100% 严格一致，无任何偏差。
+## Spec 轴（proposal rev2 已定决策 + PRD/GRILL 决议）
 
----
+九条已定决策与十条 GRILL 决议逐条命中，无冲突：
 
-## 2. 第 1 轮 6 项问题复检结果
+| 冻结决策 | 实现证据 | 结果 |
+|---|---|---|
+| 不加 `backend` 字段，复用 `provider` | `crawlers/firecrawl-scraper/src/engine.ts:57`；`SnapshotMetadata` 无 backend（`packages/data-governance/src/storage.ts:5-23`） | ✅ |
+| provider 透传修复（一行级） | `engine.ts:57` `{ ...result, provider: capabilities.provider }` + 断言测试 `crawlers/firecrawl-scraper/test/engine.test.ts:60-79` | ✅ |
+| schemaVersion 挂联合层、不动 domain 包 | `apps/workbench/shared/task-params.ts:35-37`；domain 包不在 diff | ✅ |
+| response_type/truncated snake_case、API 层 camelCase | `storage.ts:16-17, 50-51, 99-100` | ✅ |
+| limitations/operations 可选 + 空数组归一化键不存在 | `packages/data-governance/src/manifest.ts:46-47, 122-123, 178-179` | ✅ |
+| 白名单三值收敛 unknown/键缺失/非白名单、顺序按声明序 | `crawlers/firecrawl-scraper/src/pipeline.ts:18-22, 63-65, 130-132`（Set 插入序=声明序，确定性）；封堵用例 `test/pipeline.test.ts:40-94` | ✅ |
+| 双路径机制、2 个构造器调用方零改动 | grep 全仓确认调用方仅 `crawlers/cninfo-reports/src/engine.ts:335`、`crawlers/api-connector/src/engine.ts:372`，均未修改 | ✅ |
+| schemaVersion 零生产者、未知值放行、无版本协商 | grep 确认生产代码无写入者；`task-params.ts:63-69` trim 非空校验 + 中文错误 | ✅ |
+| SourceType 'rss' 不在本包 | `task-params.ts:18` 仍三值 | ✅ |
 
-| 序号 | 类别 | 问题项 | 复检证据与结论 | 状态 |
-| :--- | :--- | :--- | :--- | :--- |
-| **S1** | Standards | 缺失 [`crawlers/api-connector/README.md`](file:///Users/huangbo/Dev/Projects/web-crawler/crawlers/api-connector/README.md) | 文件已创建且内容完整，详尽涵盖特性、配置说明、CLI 使用方式、NDJSON 事件流及落盘规范 | **PASS** |
-| **S2** | Standards | 根目录 [`README.md`](file:///Users/huangbo/Dev/Projects/web-crawler/README.md) 爬虫清单未同步 | 根目录 `README.md:27` 爬虫清单表已包含 `crawlers/api-connector` 及其功能说明 | **PASS** |
-| **S3** | Standards | 残留死代码 `validation.ts` 与 `types.ts` | 根目录下两文件已彻底删除，[`src/cli.ts`](file:///Users/huangbo/Dev/Projects/web-crawler/crawlers/api-connector/src/cli.ts) 与 [`src/engine.ts`](file:///Users/huangbo/Dev/Projects/web-crawler/crawlers/api-connector/src/engine.ts) 统一从 `src/domain/` 导入类型与校验，无重复代码 | **PASS** |
-| **P1** | Spec | 任务创建路由丢弃 `ApiConnectorParams` 导致 400 | [`apps/workbench/server/routes/tasks.ts`](file:///Users/huangbo/Dev/Projects/web-crawler/apps/workbench/server/routes/tasks.ts#L17-L58) 实现 `normalizeParams` 多态规整，接入 `validateTaskParams`，合法请求正确返回 201 | **PASS** |
-| **P2** | Spec | 缺少创建 API 任务的 E2E 路由测试 | [`apps/workbench/test/api.test.ts`](file:///Users/huangbo/Dev/Projects/web-crawler/apps/workbench/test/api.test.ts#L138-L203) 包含 API Connector 任务合法创建（201）与非法参数拒绝（400 校验错误）的完备集成测试 | **PASS** |
-| **P3** | Spec | TaskQueue 产出目录未隔离 | [`apps/workbench/server/queue.ts:90-94`](file:///Users/huangbo/Dev/Projects/web-crawler/apps/workbench/server/queue.ts#L90-L94) 按 `sourceType` 隔离至 `data/api-connector/<id>` vs `data/cninfo-reports/<id>` | **PASS** |
+Q4 计入边界（在 extract 之前收集、与 record 产出无关、parse 失败沿既有 catch 静默跳过）与 Q6 fixture 构造方式（saveSnapshot 造 unknown、手写 metadata.json 造 key-absent 并注释缘由，`pipeline.test.ts:45, 66-67`）均按决议落地。
 
----
+**Spec 轴发现（均 non-blocking，判断层气味）**：
 
-## 3. 全量 Diff 双轴审查
+1. **(non-blocking, implementation)** `apps/workbench/shared/task-params.ts:81` — 未知 `sourceType` 的 fallthrough 分支 `return [\`不支持的数据源类型…\`]` 丢弃了 `sharedErrors`：sourceType 非法且 schemaVersion 非法同时发生时，schemaVersion 错误不出现。校验整体仍失败（返回非空），无正确性漏洞，仅错误清单不完整。Recheck：`validateTaskParams({sourceType:'bogus', schemaVersion:''} as any)` 返回是否含 schemaVersion 错误。
+2. **(non-blocking, verify)** 拒绝用例只走 cninfo 分支（`base()` 缺省 sourceType），`task-params.ts:76,79` 的 api-connector/web-scraper 分支 `[...sharedErrors, ...]` 拼接无直接负向用例（PRD 未要求，属测试广度缺口）。Recheck：补一条 `sourceType:'web-scraper'` + 空串 schemaVersion 的拒绝断言。
+3. **(non-blocking, verify)** `packages/data-governance/test/governance.test.ts:181` 测试标题含“不传新参数行为不变”，但测试体两次调用都显式传了空数组；“不传参数”路径实际由既有 4 个测试间接覆盖。标题轻微过誉。Recheck：标题删去后半句，或补一次不传新参数的调用。
 
-### Standards 规范轴
-- 符合仓库 TypeScript 规范，无 `any` 滥用，无未捕获异常。
-- 架构无异味，公共参数与校验统一收敛于领域包与共享层。
-- 无死代码与投机抽象，所有代码均有直接测试与业务调用。
-- **Standards 轴发现**: 0 项。
+## Standards 轴
 
-### Spec 需求轴
-- 需求契约（US1–US5）均 100% 落实且有测试守护。
-- 存量历史任务缺省 `sourceType` 自动回退为 `cninfo`，向后兼容性 100% 保持。
-- 范围控制严格，无未授权设计蔓延。
-- **Spec 轴发现**: 0 项。
+仓库无项目级 `AGENTS.md`、CONTRIBUTING、CODING_STANDARDS、prettier/eslint 配置（Glob 均无命中）——仅有 smell baseline（全部为判断层）。改动最小且聚焦，沿用各文件既有模式（中文错误消息、mkdtemp fixture、node:test 风格均与既有测试一致）。发现：
 
----
+4. **(non-blocking, implementation)** `crawlers/firecrawl-scraper/src/pipeline.ts:63-64` — 同一表达式 `meta.provider as AcquisitionCapabilities['provider']` 连续断言两次（Duplicated Code，判断层）。可提取局部变量。安全性无虞（`.has()` 守卫后才 `add`）。Recheck：`const provider = meta.provider` 提取后测试仍 26/26。
+5. **(non-blocking, task)** `.flow/tasks.md:25-29, 42-43, 56-59, 72-74` — 四个切片内部的 acceptance criteria 复选框全部保持 `- [ ]` 未勾，与切片顶层 `[x]` + 证据记录不一致；证据本身经我复跑全部属实，仅文档记录层次不齐。Recheck：勾选内层框或改为非复选清单。
 
-## 4. 总结
-- **Standards 轴**: 0 项问题
-- **Spec 轴**: 0 项问题
-- **总体结论**: **PASS**
+## 总结
+
+Standards 轴 2 条（最重：重复断言，纯气味）；Spec 轴 3 条（最重：fallthrough 丢弃共享错误，无正确性影响）。**无 blocking finding**：spec 轴九条硬约束全部命中，VERIFY 证据真实复现，无虚假证据、无范围外改动、无被拒方案复活。可合入。

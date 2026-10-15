@@ -13,6 +13,8 @@ export interface SnapshotMetadata {
   duration_ms: number;
   content_hash: string;
   formats: string[];
+  response_type?: string;
+  truncated?: boolean;
   files: {
     markdown?: string;
     html?: string;
@@ -45,6 +47,8 @@ export class SnapshotStorage {
       html?: string;
       requestedAt?: string;
       receivedAt?: string;
+      responseType?: string;
+      truncated?: boolean;
     },
     customSnapshotId?: string
   ): Promise<{ snapshotId: string; snapshotDir: string; contentHash: string; metadata: SnapshotMetadata }> {
@@ -92,6 +96,8 @@ export class SnapshotStorage {
         duration_ms: durationMs,
         content_hash: contentHash,
         formats,
+        response_type: acquisition.responseType,
+        truncated: acquisition.truncated,
         files,
       };
 

@@ -28,6 +28,25 @@ test('合法参数通过校验', () => {
   assert.deepEqual(validateTaskParams(base(), INDUSTRIES), []);
 });
 
+test('schemaVersion：缺省/任意非空字符串/未知值放行，空串与非字符串拒绝', () => {
+  // 缺省合法（旧任务不写也不要求写入）
+  assert.deepEqual(validateTaskParams(base(), INDUSTRIES), []);
+  // 任意非空字符串放行，未知值不拒绝
+  assert.deepEqual(validateTaskParams({ ...base(), schemaVersion: '1.0' }, INDUSTRIES), []);
+  assert.deepEqual(validateTaskParams({ ...base(), schemaVersion: '9.9-beta' }, INDUSTRIES), []);
+  // 空串与非字符串拒绝
+  assert.ok(
+    validateTaskParams({ ...base(), schemaVersion: '  ' }, INDUSTRIES).includes(
+      'schemaVersion 必须为非空字符串',
+    ),
+  );
+  assert.ok(
+    validateTaskParams({ ...base(), schemaVersion: 1 as never }, INDUSTRIES).includes(
+      'schemaVersion 必须为非空字符串',
+    ),
+  );
+});
+
 test('公司与行业至少其一', () => {
   const p = { ...base(), companies: [], industries: [] };
   assert.deepEqual(validateTaskParams(p, INDUSTRIES), ['必须至少选择一个公司或一个行业']);
