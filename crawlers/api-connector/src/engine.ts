@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { CrawlEvent, CrawlSummary, Reporter } from './events.js';
 import { extractArray, extractPath, extractString } from './json-path.js';
 import type { ApiConnectorParams } from './domain/index.js';
+import { egressBlockReason } from 'data-governance/egress';
 
 export interface RunApiConnectorOptions {
   params: ApiConnectorParams;
@@ -45,6 +46,57 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const MAX_REDIRECT_HOPS = 5;
+
+interface BudgetCounter {
+  checkAndReserve(tokens: number): void;
+  recordUsage(usage: { tokens: number }): void;
+}
+
+/**
+ * 出口门禁包裹的 fetch：每跳先查守卫、redirect 自行逐跳跟随（303→GET，301/302 POST→GET），
+ * 每跳计入预算；命中内网/回环或超跳数即抛错。
+ */
+async function guardedFetch(
+  fetchFn: typeof fetch,
+  url: string,
+  init: RequestInit | undefined,
+  budgetGate: BudgetCounter,
+): Promise<Response> {
+  let currentUrl = url;
+  let currentInit = init;
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    const reason = egressBlockReason(currentUrl);
+    if (reason) {
+      throw new Error(reason);
+    }
+    budgetGate.checkAndReserve(100);
+    const res = await fetchFn(currentUrl, { ...currentInit, redirect: 'manual' });
+    budgetGate.recordUsage({ tokens: 100 });
+
+    const location = res.headers.get('location');
+    if (res.status >= 300 && res.status < 400 && location) {
+      if (hop === MAX_REDIRECT_HOPS) {
+        throw new Error(`重定向次数超过上限（${MAX_REDIRECT_HOPS}）`);
+      }
+      const nextUrl = new URL(location, currentUrl).toString();
+      if (
+        res.status === 303 ||
+        ((res.status === 301 || res.status === 302) && currentInit?.method === 'POST')
+      ) {
+        const headers = { ...((currentInit?.headers as Record<string, string>) ?? {}) };
+        delete headers['Content-Type'];
+        delete headers['content-type'];
+        currentInit = { ...currentInit, method: 'GET', body: undefined, headers };
+      }
+      currentUrl = nextUrl;
+      continue;
+    }
+    return res;
+  }
+  throw new Error(`重定向次数超过上限（${MAX_REDIRECT_HOPS}）`);
 }
 
 /**
@@ -155,12 +207,10 @@ export async function runApiConnector(options: RunApiConnectorOptions): Promise<
         await sleep(params.sleepMs);
       }
 
-      budgetGate.checkAndReserve(100);
       const { url, init } = buildRequest(params, page, pageSize);
       let res: Response;
       try {
-        res = await fetchFn(url, init);
-        budgetGate.recordUsage({ tokens: 100 });
+        res = await guardedFetch(fetchFn, url, init, budgetGate);
       } catch (netErr) {
         const reason = netErr instanceof Error ? netErr.message : String(netErr);
         reporter({ type: 'queryError', target: `第 ${page} 页`, reason });
@@ -239,7 +289,7 @@ export async function runApiConnector(options: RunApiConnectorOptions): Promise<
             } else {
               try {
                 await unlink(partFile).catch(() => {});
-                const fileRes = await fetchFn(downloadUrl);
+                const fileRes = await guardedFetch(fetchFn, downloadUrl, undefined, budgetGate);
                 if (!fileRes.ok) {
                   throw new Error(`HTTP ${fileRes.status} ${fileRes.statusText}`);
                 }

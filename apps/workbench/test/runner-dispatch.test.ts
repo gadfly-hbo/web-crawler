@@ -107,7 +107,7 @@ test('buildCrawlerSpawnSpec: web-scraper 分发到 firecrawl-scraper 爬虫并�
   assert.ok(spec.args.includes('/data/out-web'));
 });
 
-test('buildCrawlerSpawnSpec: web-scraper 支持透传 apiKey 与 baseUrl 参数及注入 env', () => {
+test('buildCrawlerSpawnSpec: web-scraper 凭据仅经 env 注入，argv 不含密钥明文', () => {
   const webParams = {
     sourceType: 'web-scraper' as const,
     name: '云端商品抓取',
@@ -127,8 +127,8 @@ test('buildCrawlerSpawnSpec: web-scraper 支持透传 apiKey 与 baseUrl 参数�
   );
 
   assert.ok(!spec.args.includes('--mock'), '真实模式不应包含 --mock');
-  assert.ok(spec.args.includes('--api-key'));
-  assert.ok(spec.args.includes('fc-test-key-123456'));
+  assert.ok(!spec.args.includes('--api-key'), 'argv 不得携带 --api-key');
+  assert.ok(!spec.args.includes('fc-test-key-123456'), 'argv 不得含密钥明文');
   assert.ok(spec.args.includes('--base-url'));
   assert.ok(spec.args.includes('https://custom-firecrawl.example'));
   assert.equal(spec.env?.FIRECRAWL_API_KEY, 'fc-test-key-123456');

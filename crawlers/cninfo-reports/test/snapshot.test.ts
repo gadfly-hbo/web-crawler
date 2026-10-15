@@ -64,6 +64,7 @@ async function startFakeCninfo(): Promise<{ env: NodeJS.ProcessEnv; close: () =>
     env: {
       CNINFO_ORIGIN: `http://127.0.0.1:${port}`,
       CNINFO_STATIC_ORIGIN: `http://127.0.0.1:${port}`,
+      CNINFO_ALLOW_PRIVATE_ORIGIN: '1',
     },
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };

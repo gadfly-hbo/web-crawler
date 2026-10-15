@@ -177,6 +177,9 @@ importers:
       cninfo-reports:
         specifier: workspace:*
         version: link:../../crawlers/cninfo-reports
+      data-governance:
+        specifier: workspace:*
+        version: link:../../packages/data-governance
       hono:
         specifier: ^4.10.7
         version: 4.13.9

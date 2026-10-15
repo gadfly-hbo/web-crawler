@@ -1,4 +1,5 @@
 import type { ApiConnectorParams } from './types.js';
+import { egressBlockReason } from 'data-governance/egress';
 
 export const MIN_SLEEP_MS = 200;
 
@@ -14,6 +15,10 @@ export function validateApiConnectorParams(params: ApiConnectorParams): string[]
       new URL(params.request.url.replace(/\{\{[^}]+\}\}/g, 'placeholder'));
     } catch {
       errors.push('请求 URL 格式不合法');
+    }
+    const egressReason = egressBlockReason(params.request.url);
+    if (egressReason) {
+      errors.push(egressReason);
     }
   }
   if (!params.request?.method || !['GET', 'POST'].includes(params.request.method)) {

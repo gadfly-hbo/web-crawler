@@ -28,6 +28,7 @@ function normalizeParams(raw: unknown): TaskParams {
       baselineBrand: typeof obj.baselineBrand === 'string' ? obj.baselineBrand.trim() : 'Brand A',
       apiKey: typeof obj.apiKey === 'string' ? obj.apiKey.trim() || undefined : undefined,
       baseUrl: typeof obj.baseUrl === 'string' ? obj.baseUrl.trim() || undefined : undefined,
+      timeoutMs: typeof obj.timeoutMs === 'number' ? obj.timeoutMs : undefined,
     };
   }
 
@@ -71,6 +72,7 @@ function normalizeParams(raw: unknown): TaskParams {
         datePath: typeof ext.datePath === 'string' ? ext.datePath.trim() : undefined,
       },
       sleepMs: typeof obj.sleepMs === 'number' ? obj.sleepMs : 1000,
+      timeoutMs: typeof obj.timeoutMs === 'number' ? obj.timeoutMs : undefined,
     };
   }
 
@@ -92,6 +94,7 @@ function normalizeParams(raw: unknown): TaskParams {
     types: strArr(obj.types) as ReportType[],
     limit: num(obj.limit),
     sleepMs: num(obj.sleepMs) ?? DEFAULT_SLEEP_MS,
+    timeoutMs: num(obj.timeoutMs),
   };
 }
 

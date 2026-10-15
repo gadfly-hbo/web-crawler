@@ -99,3 +99,36 @@ test('FirecrawlAdapter: 对接本地 Mock HTTP Server 验证协议与错误归�
     server.close();
   }
 });
+
+test('FirecrawlAdapter: 未传 config.apiKey 时回退读取 FIRECRAWL_API_KEY 环境变量', async () => {
+  let authHeader: string | undefined;
+  const server = http.createServer((req, res) => {
+    authHeader = req.headers.authorization;
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          success: true,
+          data: { markdown: '# T', html: '<h1>T</h1>', metadata: { sourceURL: 'https://x.example', statusCode: 200 } }
+        })
+      );
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const port = (server.address() as { port: number }).port;
+
+  const prevKey = process.env.FIRECRAWL_API_KEY;
+  process.env.FIRECRAWL_API_KEY = 'fc-env-only-key';
+  try {
+    const adapter = new FirecrawlAdapter({ baseUrl: `http://127.0.0.1:${port}`, isSelfHosted: false });
+    const res = await adapter.scrape({ url: 'https://x.example/' });
+    assert.equal(res.success, true);
+    assert.equal(authHeader, 'Bearer fc-env-only-key');
+  } finally {
+    if (prevKey === undefined) delete process.env.FIRECRAWL_API_KEY;
+    else process.env.FIRECRAWL_API_KEY = prevKey;
+    server.close();
+  }
+});

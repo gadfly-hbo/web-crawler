@@ -1,94 +1,91 @@
-# PRD: WC-AR-02 契约增量 rev2——可选字段 + provider 透传修复 + 兼容回归
+# PRD: WC-AR-05 执行治理增量——runner 超时/进程组 + 出口门禁 + web-scraper 凭据 argv 消除
 
-> 规格源：`.flow/proposal.md`（rev2）＞ 本 PRD。红队：`.flow/red-team.md`（verdict GO，执行条件 KA-r1 已在本 PRD §实现决策 7 裁决）。无 issue tracker（docs/agents/issue-tracker.md 不存在），按 dev-flow 降级规则落盘本文件。
+> 规格源：`.flow/proposal.md` ＞ 本 PRD。红队：`.flow/red-team.md`（verdict GO，3 条附带条件已在本 PRD §实现决策 7/8/9 与 §Out of Scope 处置）。无 issue tracker，按 dev-flow 降级规则落盘本文件。
 
 ## Problem Statement
 
-为承接新增公开只读渠道（WC-AR-04 RSS PoC），治理链的契约面缺少三类信息：任务参数无版本标识、快照元数据无内容形态/截断标记、交付 manifest 无限制声明与操作审计。同时快照落盘的 `provider` 恒为 `"unknown"`（或旧快照无键）——`AcquisitionResult` 不携带 provider，engine 原样透传，导致未来 `operations` 聚合无米下锅。本轮以最小增量补齐契约并修复透传缺口，同时保证全部既有数据与 130 项测试零破坏。
+引入新联网渠道（WC-AR-04 RSS）前，执行面有三个实证缺口：runner 无任务级超时且只杀直接子进程（`runner.ts:26-73`，子进程永不返回时任务悬挂、孙进程泄漏路径无防护）；全仓无私网/回环 URL 拦截（SSRF 面无防护）；web-scraper 的 Firecrawl apiKey 以明文进 spawn argv（`runner.ts:152-155`，`ps` 可见）。
 
 ## Solution
 
-在三个既有类型上只加可选字段（不建平行对象、不引入版本协商机制），并做两处最小填充：engine 快照写入前并入 `capabilities.provider`；firecrawl 分析管线把 analyzer 的 caveats 升格进 manifest 的 `limitations`，并从快照 `provider` 聚合 `operations`（白名单收敛）。兼容性由"可选字段 + allow-list 校验器 + checksum 遍历式 verify"天然保证，另加显式回归测试固化。
+四处最小治理增量：runner 增加任务级超时（默认 + 任务参数可覆盖）并改造为进程组终止（detached + 负 pid 信号）；共享 URL 出口守卫落在 data-governance（三爬虫公共依赖），校验期拦截 web-scraper/api-connector 的采集目标 URL，cninfo 对 `CNINFO_ORIGIN` 应用同一守卫，api-connector 引擎运行时对重定向逐跳重检；web-scraper 的 apiKey 仅从 argv 删除（env 链路已端到端存在，爬虫端行为不变）。另修一个红队发现的真实边缘：重启后带脱敏假密钥的 queued 任务直接标 failed。
 
 ## User Stories
 
-1. As a 渠道接入者（WC-AR-04 作者），I want `SnapshotMetadata` 带可选 `response_type`/`truncated`，so that RSS 渠道落地时可声明内容形态与截断，无需再改类型。
-2. As a 渠道接入者，I want 快照落盘的 `provider` 反映真实适配器标识（如 `mock_adapter`），so that manifest 的 `operations` 聚合有真实数据来源。
-3. As a 数据消费方，I want manifest 携带 `limitations`（来自 analyzer caveats），so that 限制声明不再只埋在 analysis_summary.json 里。
-4. As a 数据消费方，I want manifest 携带 `operations`（去重后的 backend 列表），so that 无需遍历快照即可知道本次交付经过哪些后端。
-5. As a 数据消费方，I want 旧快照（无 provider 键或 provider 为 `"unknown"`）重跑管线时 manifest 不出现 `operations` 键，so that 我不会把 `"unknown"` 当成真实后端。
-6. As a 任务发起方，I want `TaskParams` 带可选 `schemaVersion`，so that 未来契约演进时新旧任务可区分，且旧任务不写该字段也照常校验通过。
-7. As a 维护者，I want 全部增量为可选字段且既有 130 项测试保持全绿，so that 本次变更对主线零风险。
-8. As a 维护者，I want 含新字段的 manifest 照常通过 `verifyDeliveryPackage` 校验，so that 防篡改核验不因契约扩展而失效。
-9. As a 维护者，I want 旧格式 JSON（任务/快照/manifest）解析行为不变，so that 存量任务目录永远可读。
+1. As a 工作台用户，I want 永不返回的爬虫子进程在超时后任务自动终结为 failed，so that 队列不被悬挂任务卡死（A02 通用部分）。
+2. As a 工作台用户，I want 终止信号覆盖整个进程组，so that 未来爬虫引入孙进程时不泄漏（前瞻性防护，当前爬虫无孙进程）。
+3. As a 工作台用户，I want 任务级超时可按任务覆盖（timeoutMs），so that 合法的长时间 cninfo 采集不被全局默认误杀。
+4. As a 安全维护者，I want 私网/回环/链路本地地址（含十进制/十六进制 IP 变体）在任务校验期被中文错误拒绝，so that 采集目标不会指向内网（A10）。
+5. As a 安全维护者，I want api-connector 跟随重定向时每跳重新检查目标，so that 公网 URL 302 跳私网不能绕过预检。
+6. As a 安全维护者，I want web-scraper spawn 的 argv 不含 apiKey 明文，so that `ps` 不再暴露凭据；CLI 直用 `--api-key` 的用户路径不受影响。
+7. As a 工作台用户，I want 重启后残留 queued 任务若只持有脱敏假密钥则明确标 failed，so that 不以不可溯源的 401 静默失败。
+8. As a 维护者，I want 既有 138 项测试全绿、取消语义不回退，so that 治理增量对主线零风险。
 
 ## Implementation Decisions
 
-1. **TaskParams 联合层挂 `schemaVersion?: string`**：`TaskParams = (CninfoTaskParams | ApiConnectorTaskParams | WebScraperTaskParams) & { schemaVersion?: string }`，不动 api-connector/cninfo 的 domain 类型本体（先例：同文件 `CninfoTaskParams` 本地交叉扩展）。校验强度冻结：`validateTaskParams` 对 `schemaVersion` 放行任意非空字符串，未知值不拒绝；缺省（不写）合法。
-2. **SnapshotMetadata 加 `response_type?: string` 与 `truncated?: boolean`**：命名随接口现行 snake_case；本包只加类型，不强制填充（序列化天然跳过 undefined）。
-3. **不加 `backend` 字段**（红队 KILL 后冻结）：`provider` 承载后端标识。
-4. **provider 透传修复**：firecrawl engine 在调用 `saveSnapshot` 前把 `capabilities.provider` 并入采集结果（唯一生产写入点）；mock 适配器 `provider: 'mock_adapter'` 使断言可直接落地。
-5. **DeliveryManifest 加 `limitations?: string[]` 与 `operations?: { backend: string; toolVersion?: string }[]`**：命名随 manifest 现行 camelCase；`operations[].backend` 取值 = `SnapshotMetadata.provider`（仅复用字段名，语义来源是 provider）。
-6. **双路径填充机制**：`createAndSaveDeliveryManifest` 增加可选参数（`limitations`、`operations`），2 个生产调用方（cninfo、api-connector engine）零改动继续工作；firecrawl 管线的 manifest 字面量构造路径直接赋值这两个字段。
-7. **operations 聚合与缺省语义（红队 KA-r1 裁决）**：管线从本次任务全部快照 metadata 的 `provider` 去重聚合；**按已知 provider 白名单（`firecrawl_cloud`/`firecrawl_self_hosted`/`mock_adapter`）收敛——键缺失或值为 `"unknown"`（或任何非白名单值）的快照一律不产生 operations 条目**；聚合结果为空时 manifest 中 `operations` 键不存在（不写 `[]`）。`limitations` 同理：无 caveats 时键不存在。
-8. **不做的事**：不引入 schema_version 协商/转换器；不建 ChannelCapability/OperationRun 平行类型；不动任务状态机；`SourceType = 'rss'` 不在本包；`toolVersion` 缺省不填；`response_type`/`truncated` 本包不强制填充。
+1. **任务级超时**：`spawnRunner` 增加 `timeoutMs` 选项；到点后先输出人读日志行（任务超时，已终止），再走与取消相同的终止路径（SIGTERM→宽限→SIGKILL，见决策 2）；终态沿用现有"runner 的 done 拒绝 → failed"分类。默认值 `DEFAULT_TASK_TIMEOUT_MS = 60 * 60 * 1000`（60 分钟）：本机无真实时长数据可校准（tasks.json 最长 5s），cninfo 多公司×多报告类型合法任务可达数十分钟，取宽裕默认 + 任务参数 `timeoutMs`（TaskParams 联合层可选字段，正整数校验）覆盖；测试用小值。
+2. **进程组终止**：spawn 加 `detached: true`（POSIX 新进程组）；终止用 `process.kill(-pid, sig)`，对已退出进程组的 ESRCH 容错（try/catch）；`SpawnHandle` 暴露 `pid` 供测试断言残留。仅 macOS 实证，Linux 语义差异记录为未验证项；服务自身 SIGINT 关停清理不在本包（记录已知限制）。
+3. **共享出口守卫**：data-governance 新增纯函数（如 `isPrivateOrLoopbackUrl(url): boolean` / `assertPublicHttpUrl`），覆盖：`localhost`/`*.localhost`、`127.0.0.0/8`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`169.254.0.0/16`、`0.0.0.0`、`::1`、`fc00::/7`、`fe80::/10`，以及十进制/十六进制/短格式 IP 变体（如 `2130706433`、`0x7f000001`）；仅按 URL 字面解析，**不做 DNS 解析**（rebinding 记录为已知限制）。
+4. **校验期拦截（红队条件 2 的可测化）**：`validateWebScraperParams` 对 `urls` 逐项、`validateApiConnectorParams` 对 `request.url` 调共享守卫，中文错误（风格随现有校验消息）；cninfo 对 `CNINFO_ORIGIN` 在 CLI 校验期调同一守卫——三个爬虫的**采集目标/请求发起对象**全部经过守卫（提案"对所有爬虫生效"的落地语义）。web-scraper 的 `baseUrl`（Firecrawl 服务端点）**豁免**：自托管合法指向私网（既有测试 api.test.ts:318 即用 localhost 端点），且 baseUrl 不是"采集目标 URL"。
+5. **重定向逐跳重检**：api-connector 引擎请求路径改 `redirect: 'manual'` 自行跟随，每跳对 Location 目标调守卫，限 5 跳；web-scraper 的实际抓取由 Firecrawl 服务端执行，其重定向目标不受本地门禁约束——记录为已知限制（云端代抓固有能力边界）。
+6. **apiKey argv 消除**：`buildCrawlerSpawnSpec` 的 web-scraper 分支删除 `--api-key` argv 注入，保留既有 env 注入（runner.ts:153）与 adapter 的 `config.apiKey || process.env.FIRECRAWL_API_KEY` 回退（adapter.ts:21）；爬虫 CLI 的 `--api-key` 解析保留（直用 CLI 的用户路径不变）。**同批必须改写 `runner-dispatch.test.ts:110-136`**：argv 断言从"含密钥"反转为"不含密钥"（红队条件 3，列入"不回退"清单）。
+7. **重启脱敏假密钥边缘（红队 KA4）**：queue 重启恢复时，queued 任务的 `params.apiKey` 若为脱敏形态（含 `****`）则标 failed 并记录原因（密钥随服务重启失效，需重新提交）。
+8. **api-connector headers 泄漏的显式排除（红队条件 1）**：api-connector 的 `request.headers` 经 `--config-json` 整体进 argv 且 tasks.json 不脱敏——属实，但本包不修：headers 是任意键值集合，脱敏/注入机制需专项设计，与单字段 apiKey 的现成 env 链路不同构；采纳文档 §8 的 WC-AR-05 范围本就只列 `--api-key`。记录为凭据治理专项缺口（与 localStorage/process.env 持久化同类）。
+9. **不做的事**：不改任务状态机；不动爬虫业务逻辑；不引入 ChannelRegistry；不做服务关停的进程组清理；不做 DNS rebinding 防护。
 
 ## Testing Decisions
 
-好测试标准：只测外部可观察行为（落盘 JSON 内容、函数返回、校验通过/拒绝），不耦合内部实现；沿用各包既有测试风格（node:test + assert，临时目录 fixture）。
+好测试标准：只测外部可观察行为（任务终态、进程存活、校验错误清单、argv 内容）；沿用既有测试基建——真子进程 fixtures（fake/slow/stubborn-crawler.mjs 模式）、Runner fake seam（queue.test.ts:27-51）、waitFor 轮询（queue.test.ts:65-72）；毫秒级超时参数保证不 flaky（既有 SIGKILL 用例 135ms 稳定，本仓无 CI 仅本地跑）。
 
-- **data-governance 单测扩展**（`packages/data-governance/test/governance.test.ts`，兼容性测试归属此文件——裁决自提案开放问题 1：新字段的类型与序列化是 governance 的职责，消费方行为断言放各消费方既有测试文件）：
-  - 旧 manifest JSON（无新字段）照常解析、照常通过 `verifyDeliveryPackage`；
-  - 含 `limitations`/`operations` 的 manifest 可构造、可持久化、可读回、可通过 verify；
-  - `createAndSaveDeliveryManifest` 不传新参数行为不变（2 调用方零改动的回归保证）。
-- **firecrawl engine 测试**：mock 采集路径落盘快照 metadata 含 `provider: "mock_adapter"`。
-- **firecrawl pipeline 测试**：产出 manifest 含非空 `limitations`（来自 caveats）与 `operations: [{ backend: "mock_adapter" }]`；fixture 快照无 provider 键 → 无 `operations` 键；fixture 快照 `provider: "unknown"` → 无 `operations` 键（KA-r1 封堵用例）。
-- **workbench task-params 测试**：`schemaVersion` 缺省/任意非空字符串/未知值均通过校验；旧任务 JSON 无该字段照常校验。
-
-Prior art：`governance.test.ts` 的临时目录 + 落盘读回模式；firecrawl `engine.test.ts`/`pipeline.test.ts` 的 mock 适配器端到端模式；workbench 校验器单测。
+- **runner 超时**：新增 `hang-forever.mjs` fixture + `timeoutMs: 200` → 断言任务终态 failed、事件流有终态、fixture 进程不存活（pidfile 或 `process.kill(pid, 0)` ESRCH 轮询）。
+- **进程组**：fixture spawn 孙进程并写 pidfile、emit ready 行 → cancel → 轮询孙进程 pid 至 ESRCH。
+- **出口守卫**：data-governance 纯函数参数化用例（上列地址族 + 公网对照 + 十进制/十六进制变体）；workbench 校验测试断言中文拒绝；cninfo CLI 校验期对 CNINFO_ORIGIN 的守卫用例。
+- **重定向**：api-connector 引擎测试用本地 server 302→`127.0.0.1`，断言被拦。
+- **argv**：`buildCrawlerSpawnSpec` web-scraper 分支断言 argv 不含 apiKey 值且 env 含 `FIRECRAWL_API_KEY`（改写既有 runner-dispatch 断言）；爬虫端 env 回退路径功能测试。
+- **重启边缘**：queue 重启恢复模式（176-194 行先例）+ 带脱敏 apiKey 的 queued 任务 → failed。
 
 ## Out of Scope
 
-- RSS 渠道本身（WC-AR-04）、`SourceType = 'rss'` 扩展、RSS 校验/spawn 分支。
-- runner 超时/进程树/出口门禁/凭据治理（WC-AR-05）。
-- `response_type`/`truncated` 的实际填充时机与取值收敛（WC-AR-04）。
-- DatasetVersion 机制、AnalysisRun、版本协商转换器。
-- 旧快照遗留 `schema_version: "1.0"` 键的清理（知晓存在，本包不动）。
+- api-connector `request.headers` 的 argv/落盘凭据泄漏（决策 8 记录排除理由，凭据治理专项）。
+- localStorage 明文凭据、process.env 重启即失（采纳文档 §8 未列入 WC-AR-05，同属凭据专项）。
+- DNS rebinding 防护；web-scraper 云端重定向约束；服务 SIGINT 关停清理；Windows 进程组语义。
+- RSS 渠道本身（WC-AR-04）。
 
 ## Further Notes
 
-- 红队次要备注：① `rss_local` 不在当前 provider 联合类型内，WC-AR-04 落地时扩类型；② 现存 29 个落盘快照实为**无 provider 键**，`'unknown'` 是当前代码对**新写入**的兜底行为——两种形态都由决策 7 的白名单收敛覆盖。
-- 验收标准（同提案）：兼容回归全绿 + 上述填充断言 + `pnpm test && pnpm typecheck && pnpm build` 全绿。
+- 验收口径映射：A02 通用部分=决策 1+2；A10=决策 3+4+5（重定向）；argv=决策 6；既有取消测试不回退 + runner-dispatch 断言反转=决策 6 的同批改写。
 
 ---
 
 ## PRD diff gate 记录（auto 模式）
 
-相对 proposal.md 的 diff（全部纯增量，无改变/丢弃提案决策，自批准）：
+相对 proposal.md 的 diff（全部纯增量/开放问题裁决，无改变或丢弃提案已定决策，自批准）：
 
-1. KA-r1 裁决：operations 聚合按 provider 白名单三值收敛，`"unknown"`/键缺失/非白名单值一律不产生条目——对提案冻结的"键不存在"语义补齐值形态分支（红队 GO 的执行条件，属细化非变更）。
-2. 兼容性测试归属裁决：governance 类型/序列化测试放 `governance.test.ts`，消费方行为断言放各消费方既有测试文件（关闭提案开放问题 1）。
-3. 关闭提案开放问题 2：红队核验 web 前端五处 TaskParams 使用点无额外结构假设。
-4. 补充：`limitations` 无 caveats 时键不存在；`operations[].backend` 取值注明 = `SnapshotMetadata.provider`。
+1. api-connector headers 泄漏的显式排除理由（红队 GO 条件 1；提案决策 4 本就限定 web-scraper apiKey，此处补叙事完整性，范围不变）。
+2. 验收 3 可测化（红队 GO 条件 2）：cninfo 对 CNINFO_ORIGIN 应用同一守卫以兑现"对所有爬虫生效"；baseUrl 豁免（非"采集目标 URL"语义）；web-scraper 云端重定向记录为已知限制。
+3. 新增决策 7：重启后带脱敏假密钥的 queued 任务标 failed（红队 KA4，提案未提及的边缘，纯增量修复）。
+4. 超时默认值 60min + 任务参数 timeoutMs 覆盖（裁决提案开放问题 1；本机无时长数据，取宽裕默认防误杀）。
+5. api-connector 引擎 redirect: 'manual' 逐跳重检（裁决提案开放问题 2 的重定向维度；A10 行含"重定向越界"）。
+6. runner-dispatch.test.ts:110-136 的 argv 断言反转列入"不回退"同批改写清单（红队 GO 条件 3）。
 
 ---
 
 ## GRILL 决议附录
 
-### Round 1（author-blind 子代理，8 个问题包，主代理逐条核验证据后全部采用推荐答案）
+### Round 1（author-blind 子代理，7 个问题包，主代理核验关键证据后全部采用推荐答案）
 
-1. **Q1 `saveSnapshot` 写入通路**：`acquisition` 参数加可选 `response_type`/`truncated` 对应入口，构造 metadata 时带入——"不强制填充"不变，验收标准 1 的"可持久化并可读回"经真实写入者执行。（证据：storage.ts:38-48 参数面、:84-96 字面量构造）
-2. **Q2 `schemaVersion` 校验落点**：在 workbench `validateTaskParams` 分发前加共享检查——字段存在时必须为 trim 后非空 string，否则 push 中文错误（风格随 task-params.ts:39-52）；缺省/任意非空/未知值放行；补空串与非字符串两个拒绝用例。
-3. **Q3 provider 白名单宿主**：firecrawl pipeline.ts 导出 `KNOWN_OPERATION_BACKENDS: ReadonlySet<AcquisitionCapabilities['provider']>`，类型锚定 port.ts 联合；data-governance 保持渠道无关，白名单不进治理包。
-4. **Q4 operations 计入边界**：凡可读到 metadata 且 provider 过白名单即计入，与该快照是否产出 record 无关（operations 是交付溯源口径，与 sourceSummary.succeeded 是两套事实口径）；metadata 解析失败的快照沿现状静默跳过。
-5. **Q5 空数组归一化**：`createAndSaveDeliveryManifest` 内部 `limitations?.length ? limitations : undefined`（operations 同理）——"空→键不存在"不变量收进单一执行点；归一化不做白名单过滤。
-6. **Q6 pipeline 测试新建**：`pipeline.test.ts` 此前不存在，新建；`provider: 'mock_adapter'` 与 `'unknown'` fixture 用 `saveSnapshot` 构造，key-absent fixture 手写 metadata.json 并注释缘由；正常路径走 MockAcquisitionAdapter + engine 端到端（先例 engine.test.ts:10-58）。**PRD Testing Decisions 的"prior art: pipeline.test.ts"表述修正为"新建，prior art 为 engine.test.ts 端到端模式"。**
-7. **Q7 schemaVersion 无生产者**：本包零写入者，字段纯预留（与提案"不改主线行为"一致）；验收明确"本包不产生带 schemaVersion 的任务"。
-8. **Q8 前端不展示**：本包不含 UI 改动，`DeliveryManifestInfo` 子集接口不动；展示随 WC-AR-04 一并设计。PRD Out of Scope 补充"前端展示不在本包"（同时确认本流程无用户可见 UI，UI-GATE 不适用）。
+1. **Q1 cninfo 守卫与既有 e2e 冲突**：引入显式豁免 env `CNINFO_ALLOW_PRIVATE_ORIGIN=1`（先例：http.ts:28 的 env override = 本地测试模式惯例）；`CNINFO_ORIGIN` 与 `CNINFO_STATIC_ORIGIN`（cninfo.ts:7-8，两个都是请求发起对象）一并纳入守卫；既有两个 e2e 测试文件 env 各加豁免行，另写正向拒绝用例。
+2. **Q2 timeoutMs 入口**：扩展 `normalizeParams`（tasks.ts:14-96）三个分支透传 `timeoutMs`（仅 typeof number 保留），校验正整数、不设上限；UI 本包不做；`makeCrawlerRunner`（runner.ts:172-176）把 `task.params.timeoutMs` 传入 spawnRunner opts。注：schemaVersion 同被 normalizeParams 剥离，属既有 seam 盲点，本包只透传 timeoutMs（schemaVersion 零生产者，无影响）。
+3. **Q3 超时终态可观测性**：超时触发时 runner 先发结构化事件 `{"type":"error","message":"任务超时（N ms），已终止子进程"}`（reducer 置 failed 并写清 task.error），随后走进程组 SIGTERM→SIGKILL；done 不 reject（保持 SpawnHandle 既有不变式），onProcessDone 兜底不覆盖。
+4. **Q4 下载路径纳入守卫**：api-connector 两条 fetch（分页 engine.ts:162 + 附件下载 :242）都改 redirect manual 逐跳重检；`downloadUrl` 首跳也检查（响应可控的二阶 SSRF 向量）；方法改写语义 = 303→GET、301/302 POST→GET；每跳计入 budgetGate。
+5. **Q5 守卫严格解析器**：`new URL` 归一（含 `{{...}}` 模板占位替换）→ 协议白名单仅 http/https（其余含 file:/data: 一律拒绝）→ host 解析（剥 `[]`、zone-id、十/十六/八进制/短格式 IPv4、IPv6 含 `::ffff:` mapped、`fc00::/7`、`fe80::/10`、`::`、全段 `0.0.0.0/8`）→ CIDR 判定；拒绝文案分两种（"仅支持 http/https URL" / "目标地址指向内网/回环，已被出口门禁拦截"）；基于 `new URL` 的 host 字段防 userinfo 欺骗。**机械前置**：workbench package.json 新增 `data-governance: workspace:*` 依赖；data-governance exports map 注册 `./egress` 子路径。
+6. **Q6 重启脱敏判定**：init 时凡 `sourceType==='web-scraper'` 且 status queued 且 `params.apiKey` 含 `****` → failed，`error: '检测到重启前残留的脱敏密钥，密钥不随服务重启保留，请重新提交任务'`；mock 不豁免；照抄 init 既有 running→failed 模式（queue.ts:56-65）+ persist。
+7. **Q7 detached 的 Ctrl-C 行为 delta 记录**：detached 后终端 SIGINT 不再连带杀爬虫（爬虫成孤儿）；本包不做关停清理，PRD 已知限制明确记录该行为回退；最小清理（SIGINT handler 调 cancel）留作紧随的独立小改。
 
-### Round 2（主代理，挖掘 round 1 写入的细节，2 个问题包）
+### Round 2（主代理，3 个问题包）
 
-1. **R2-Q1 `saveSnapshot` 新参数命名**：API 参数层随现有 camelCase（`responseType?: string`、`truncated?: boolean`，同 targetUrl/statusCode 先例），落盘映射为 snake_case（同 targetUrl→target_url 既有映射模式）。
-2. **R2-Q2 operations 输出顺序**：按 `KNOWN_OPERATION_BACKENDS` 白名单声明顺序输出（确定性，不受 readdir 顺序影响），去重后每个 backend 至多一条。
+1. **R2-Q1 守卫 API 形态**：新文件 `packages/data-governance/src/egress.ts`，导出 `egressBlockReason(url: string): string | null`（返回中文拦截原因或 null 放行）——校验器 push 消息与引擎抛错两用的最小形态；exports map 加 `"./egress": "./src/egress.ts"`，同时从 index.ts re-export。
+2. **R2-Q2 api-connector manual 重定向细节**：Location 相对解析用 `new URL(location, currentUrl)`；上限 5 跳，超限报错；每跳先 `egressBlockReason` 后请求；保持既有错误分类（`!res.ok` 分支）不变。
+3. **R2-Q3 超时与取消并发**：两者共用同一终止函数（进程组 SIGTERM→宽限→SIGKILL），重复触发幂等（ESRCH 容错），取消与超时并发不产生双重事件/双重终态。
 
-Round 2 之后再无新增开放问题（预算 2 轮用完），GRILL 收敛。
+Round 2 之后无新增开放问题（预算 2 轮用完），GRILL 收敛。本批无用户可见 UI（Q2 裁决 UI 不做），UI-GATE 不适用。

@@ -9,6 +9,7 @@ import {
   BudgetGate,
   computeFileSha256,
   createAndSaveDeliveryManifest,
+  egressBlockReason,
   EvidenceIndexStore,
   locateSnippet,
   SnapshotStorage,
@@ -201,4 +202,54 @@ test('data-governance: manifest 空数组归一化为键不存在，不传新参
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
+});
+
+test('data-governance: 出口守卫拦截私网/回环/非标协议，放行公网', () => {
+  const blocked = [
+    'http://127.0.0.1/',
+    'http://127.0.0.1:8080/admin',
+    'http://localhost/',
+    'http://foo.localhost/',
+    'http://10.0.0.1/',
+    'http://172.16.0.1/',
+    'http://172.31.255.255/',
+    'http://192.168.1.1/',
+    'http://169.254.169.254/latest/meta-data',
+    'http://0.0.0.0/',
+    'http://0.1.2.3/',
+    'http://[::1]/',
+    'http://[::]/',
+    'http://[fc00::1]/',
+    'http://[fe80::1]/',
+    'http://[::ffff:127.0.0.1]/',
+    'http://[::ffff:10.0.0.1]/',
+    'http://2130706433/',
+    'http://0x7f000001/',
+    'http://0177.0.0.1/',
+    'http://127.1/',
+  ];
+  for (const url of blocked) {
+    const reason = egressBlockReason(url);
+    assert.ok(reason, `应拦截: ${url}`);
+    assert.match(reason, /内网|回环/);
+  }
+
+  const rejectedProtocol = ['file:///etc/passwd', 'ftp://example.com/x', 'data:text/plain,hi'];
+  for (const url of rejectedProtocol) {
+    assert.equal(egressBlockReason(url), '仅支持 http/https URL');
+  }
+
+  const allowed = [
+    'https://example.com/',
+    'http://api.example.com/v1/list?page={{page}}',
+    'https://172.15.0.1/',
+    'https://11.0.0.1/',
+    'http://127.0.0.1.evil.com/',
+    'http://127.0.0.1@evil.com/',
+  ];
+  for (const url of allowed) {
+    assert.equal(egressBlockReason(url), null, `应放行: ${url}`);
+  }
+
+  assert.equal(egressBlockReason('not a url'), '仅支持 http/https URL');
 });

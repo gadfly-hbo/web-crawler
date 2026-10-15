@@ -58,6 +58,16 @@ test('parseArgs: 业务参数校验不通过时抛出异常', () => {
   assert.throws(() => parseArgs(['--config-json', JSON.stringify(bad)]), /请求间隔不能低于 200ms/);
 });
 
+test('parseArgs: 私网/回环请求 URL 被出口门禁拒绝', () => {
+  const bad = validConfig();
+  bad.request.url = 'http://127.0.0.1:9090/api?page={{page}}';
+  assert.throws(() => parseArgs(['--config-json', JSON.stringify(bad)]), /内网|回环/);
+
+  const bad2 = validConfig();
+  bad2.request.url = 'http://192.168.1.10/data';
+  assert.throws(() => parseArgs(['--config-json', JSON.stringify(bad2)]), /内网|回环/);
+});
+
 function runCli(args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const cp = spawn(process.execPath, ['--import', 'tsx', mainPath, ...args]);

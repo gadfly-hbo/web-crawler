@@ -90,6 +90,7 @@ async function startFakeCninfo(options?: FakeCninfoOptions): Promise<FakeCninfo>
     env: {
       CNINFO_ORIGIN: `http://127.0.0.1:${port}`,
       CNINFO_STATIC_ORIGIN: `http://127.0.0.1:${port}`,
+      CNINFO_ALLOW_PRIVATE_ORIGIN: '1',
     },
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
@@ -411,3 +412,14 @@ test('年份模式窗口收窄（仅年报查 Y+1，仅季报查 Y，混合查 Y
   }
 });
 
+
+test('出口门禁：私网 CNINFO_ORIGIN 无豁免时 CLI 拒绝执行', async () => {
+  const { code, events } = await runCli(
+    ['--json', '--company', '平安银行', '--year', '2024', '--type', 'annual'],
+    { CNINFO_ORIGIN: 'http://192.168.1.10' },
+  );
+  assert.equal(code, 1);
+  const errEvent = events.find((e) => e.type === 'error');
+  assert.ok(errEvent);
+  assert.match(String(errEvent.message), /内网|回环/);
+});

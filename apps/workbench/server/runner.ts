@@ -21,14 +21,20 @@ export interface RunExit {
 export interface SpawnHandle {
   done: Promise<RunExit>;
   cancel: () => void;
+  pid?: number;
 }
 
-export function spawnRunner(spec: SpawnSpec, opts: { killGraceMs?: number } = {}) {
+/** 任务级超时默认值：60 分钟（cninfo 多公司长任务可达数十分钟；任务参数 timeoutMs 可覆盖）。 */
+export const DEFAULT_TASK_TIMEOUT_MS = 60 * 60 * 1000;
+
+export function spawnRunner(spec: SpawnSpec, opts: { killGraceMs?: number; timeoutMs?: number } = {}) {
   const grace = opts.killGraceMs ?? 5000;
   return (_task: unknown, emit: (line: string) => void): SpawnHandle => {
+    // detached：子进程自成进程组，终止信号可覆盖孙进程
     const child = spawn(spec.command, spec.args, {
       cwd: spec.cwd,
       env: { ...process.env, ...spec.env },
+      detached: true,
     });
     let buf = '';
     child.stdout.on('data', (d) => {
@@ -62,16 +68,45 @@ export function spawnRunner(spec: SpawnSpec, opts: { killGraceMs?: number } = {}
       });
     });
     let canceled = false;
-    const cancel = () => {
+    const killGroup = (signal: NodeJS.Signals) => {
+      if (child.pid === undefined) return;
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        // 进程组已不存在（ESRCH）：与已退出的 child.kill 语义对齐，容错跳过
+      }
+    };
+    // 取消与超时共用的终止路径；重复触发幂等
+    const terminate = () => {
       if (canceled || exited) return;
       canceled = true;
-      child.kill('SIGTERM');
+      killGroup('SIGTERM');
       const timer = setTimeout(() => {
-        if (!exited) child.kill('SIGKILL');
+        if (!exited) killGroup('SIGKILL');
       }, grace);
       timer.unref();
     };
-    return { done, cancel };
+    const cancel = terminate;
+    let timeoutTimer: NodeJS.Timeout | undefined;
+    if (opts.timeoutMs !== undefined) {
+      timeoutTimer = setTimeout(() => {
+        if (exited) return;
+        emit(
+          JSON.stringify({
+            type: 'error',
+            message: `任务超时（${opts.timeoutMs} ms），已终止子进程`,
+          }),
+        );
+        terminate();
+      }, opts.timeoutMs);
+      timeoutTimer.unref();
+    }
+    const clearTimeoutTimer = () => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+    };
+    child.on('close', clearTimeoutTimer);
+    child.on('error', clearTimeoutTimer);
+    return { done, cancel, pid: child.pid };
   };
 }
 
@@ -151,7 +186,6 @@ export function buildCrawlerSpawnSpec(
     const env: NodeJS.ProcessEnv = {};
     if (webParams.apiKey) {
       env.FIRECRAWL_API_KEY = webParams.apiKey;
-      args.push('--api-key', webParams.apiKey);
     }
     if (webParams.baseUrl) {
       env.FIRECRAWL_BASE_URL = webParams.baseUrl;
@@ -172,6 +206,7 @@ export function buildCrawlerSpawnSpec(
 export function makeCrawlerRunner(opts: { repoRoot: string }): Runner {
   return (task, emit) => {
     const spec = buildCrawlerSpawnSpec(task, opts.repoRoot);
-    return spawnRunner(spec)(task, emit);
+    const timeoutMs = task.params.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
+    return spawnRunner(spec, { timeoutMs })(task, emit);
   };
 }

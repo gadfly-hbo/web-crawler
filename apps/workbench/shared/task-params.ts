@@ -10,6 +10,7 @@ import {
   validateApiConnectorParams,
   type ApiConnectorParams,
 } from 'api-connector/domain';
+import { egressBlockReason } from 'data-governance/egress';
 
 export * from 'cninfo-reports/domain';
 export type { ApiConnectorParams } from 'api-connector/domain';
@@ -34,6 +35,7 @@ export interface WebScraperParams {
 
 export type TaskParams = (CninfoTaskParams | ApiConnectorParams | WebScraperParams) & {
   schemaVersion?: string;
+  timeoutMs?: number;
 };
 
 export function validateWebScraperParams(params: WebScraperParams): string[] {
@@ -47,6 +49,11 @@ export function validateWebScraperParams(params: WebScraperParams): string[] {
     for (const u of params.urls) {
       if (!u || !/^https?:\/\//i.test(u.trim())) {
         errors.push(`URL 格式不合法: ${u}`);
+        continue;
+      }
+      const egressReason = egressBlockReason(u.trim());
+      if (egressReason) {
+        errors.push(`${egressReason}: ${u}`);
       }
     }
   }
@@ -66,6 +73,12 @@ export function validateTaskParams(
     (typeof params.schemaVersion !== 'string' || !params.schemaVersion.trim())
   ) {
     sharedErrors.push('schemaVersion 必须为非空字符串');
+  }
+  if (
+    params.timeoutMs !== undefined &&
+    (!Number.isInteger(params.timeoutMs) || params.timeoutMs < 1)
+  ) {
+    sharedErrors.push('timeoutMs 应为正整数（毫秒）');
   }
 
   const sourceType = params.sourceType ?? 'cninfo';

@@ -5,6 +5,8 @@
  */
 import process from 'node:process';
 
+import { egressBlockReason } from 'data-governance/egress';
+
 import { parseArgs, USAGE, type CliOptions } from './cli.js';
 import { run } from './engine.js';
 import { ndjsonReporter, textReporter } from './reporter.js';
@@ -33,6 +35,26 @@ async function main(): Promise<void> {
     }
     process.exitCode = 1;
     return;
+  }
+
+  // 出口门禁：数据源 origin 指向内网/回环时拒绝执行（本地测试用 CNINFO_ALLOW_PRIVATE_ORIGIN=1 豁免）
+  if (process.env.CNINFO_ALLOW_PRIVATE_ORIGIN !== '1') {
+    const origins = [process.env.CNINFO_ORIGIN, process.env.CNINFO_STATIC_ORIGIN].filter(
+      (v): v is string => Boolean(v),
+    );
+    for (const origin of origins) {
+      const reason = egressBlockReason(origin);
+      if (reason) {
+        const message = `${reason}: ${origin}`;
+        if (jsonMode) {
+          process.stdout.write(JSON.stringify({ type: 'error', message }) + '\n');
+        } else {
+          console.error(`[fatal] ${message}`);
+        }
+        process.exitCode = 1;
+        return;
+      }
+    }
   }
 
   const reporter = opts.json ? ndjsonReporter() : textReporter();

@@ -256,3 +256,34 @@ test('runner 的 done 拒绝：任务标 failed，队列不停摆继续下一个
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('重启恢复：带脱敏密钥的 queued 任务标 failed（密钥不随重启保留），正常 queued 不受影响', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'wb-queue-'));
+  try {
+    const { runner } = fakeRunner([], { hang: true });
+    const webParams = {
+      sourceType: 'web-scraper' as const,
+      name: '云端抓取',
+      urls: ['https://shop.example/1'],
+      mock: false,
+      apiKey: 'fc-restart-key-123456',
+    };
+    const q1 = new TaskQueue({ runner, dataRoot: dir });
+    await q1.init();
+    const t1 = await q1.create(webParams, false); // 占住执行位（running）
+    const t2 = await q1.create(webParams, false); // 滞留 queued，带脱敏密钥
+    const t3 = await q1.create({ sourceType: 'web-scraper' as const, name: 'mock 任务', urls: ['https://a.example'], mock: true }, false); // queued，无密钥
+    await waitFor(() => q1.get(t1.id)?.status === 'running');
+    await q1.close();
+
+    const q2 = new TaskQueue({ runner, dataRoot: dir });
+    await q2.init();
+    const restored = q2.get(t2.id);
+    assert.equal(restored?.status, 'failed');
+    assert.match(restored?.error ?? '', /脱敏密钥/);
+    // 无密钥的 queued 任务不受影响（会被 pump 起为 running）
+    assert.notEqual(q2.get(t3.id)?.status, 'failed');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

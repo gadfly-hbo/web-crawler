@@ -47,6 +47,17 @@ test('schemaVersion：缺省/任意非空字符串/未知值放行，空串与�
   );
 });
 
+test('timeoutMs：缺省与正整数放行，非正整数拒绝', () => {
+  assert.deepEqual(validateTaskParams(base(), INDUSTRIES), []);
+  assert.deepEqual(validateTaskParams({ ...base(), timeoutMs: 60_000 }, INDUSTRIES), []);
+  assert.ok(
+    validateTaskParams({ ...base(), timeoutMs: 0 }, INDUSTRIES).includes('timeoutMs 应为正整数（毫秒）'),
+  );
+  assert.ok(
+    validateTaskParams({ ...base(), timeoutMs: 1.5 }, INDUSTRIES).includes('timeoutMs 应为正整数（毫秒）'),
+  );
+});
+
 test('公司与行业至少其一', () => {
   const p = { ...base(), companies: [], industries: [] };
   assert.deepEqual(validateTaskParams(p, INDUSTRIES), ['必须至少选择一个公司或一个行业']);
@@ -169,6 +180,22 @@ test('createSampleProductComparisonParams 生成合法的商品对比参数并�
   assert.equal(p.analyze, true);
   assert.deepEqual(validateTaskParams(p), []);
   assert.equal(summarizeTask(p, false), '商品价格分析 · 品牌A/B/C商品标价中位数对比样板');
+});
+
+test('web-scraper 私网/回环采集 URL 被出口门禁拒绝，baseUrl（自托管端点）豁免', () => {
+  const bad = { sourceType: 'web-scraper' as const, name: 't', urls: ['http://127.0.0.1/x'] };
+  assert.ok(validateTaskParams(bad).some((e) => e.includes('内网')));
+
+  const bad2 = { sourceType: 'web-scraper' as const, name: 't', urls: ['http://[::1]/x'] };
+  assert.ok(validateTaskParams(bad2).some((e) => e.includes('内网')));
+
+  const ok = {
+    sourceType: 'web-scraper' as const,
+    name: 't',
+    urls: ['https://example.com/p'],
+    baseUrl: 'http://localhost:3002',
+  };
+  assert.deepEqual(validateTaskParams(ok), []);
 });
 
 

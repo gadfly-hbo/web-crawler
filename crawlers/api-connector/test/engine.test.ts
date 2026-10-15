@@ -284,3 +284,92 @@ test('runApiConnector: 接口返回 HTTP 500 时发射 queryError 并计入失�
     await rm(tmp, { recursive: true, force: true });
   }
 });
+
+test('runApiConnector: 分页请求 302 跳转私网被出口门禁拦截', async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), 'api-engine-redirect-'));
+  const events: CrawlEvent[] = [];
+  const mockFetch: typeof fetch = async () =>
+    new Response(null, { status: 302, headers: { Location: 'http://127.0.0.1/internal' } });
+
+  try {
+    const summary = await runApiConnector({
+      params: createMockParams(),
+      reporter: (e) => events.push(e),
+      outDir: tmp,
+      fetchFn: mockFetch,
+    });
+    assert.ok(summary.failed >= 1);
+    const qerr = events.find((e) => e.type === 'queryError');
+    assert.ok(qerr && qerr.type === 'queryError');
+    assert.match(qerr.reason, /内网|回环/);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('runApiConnector: downloadUrl 直指私网（无重定向）被拦', async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), 'api-engine-dlurl-'));
+  const events: CrawlEvent[] = [];
+  const mockFetch: typeof fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('api.example.com')) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            items: [{ id: '1', title: '恶意条目', pdfUrl: 'http://169.254.169.254/latest/meta-data' }],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    return new Response('不应被请求', { status: 200 });
+  };
+
+  try {
+    await runApiConnector({
+      params: createMockParams(),
+      reporter: (e) => events.push(e),
+      outDir: tmp,
+      fetchFn: mockFetch,
+    });
+    const fileEvent = events.find((e) => e.type === 'file' && e.status === 'failed');
+    assert.ok(fileEvent && fileEvent.type === 'file');
+    assert.match(fileEvent.reason ?? '', /内网|回环/);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('runApiConnector: 公网 303 重定向逐跳跟随且改写为 GET', async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), 'api-engine-303-'));
+  const events: CrawlEvent[] = [];
+  const seenMethods: string[] = [];
+  const mockFetch: typeof fetch = async (input, init) => {
+    const url = String(input);
+    seenMethods.push(init?.method ?? 'GET');
+    if (url.includes('api.example.com')) {
+      return new Response(null, { status: 303, headers: { Location: 'https://cdn.example.com/final' } });
+    }
+    return new Response(JSON.stringify({ data: { items: [] } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  const params = createMockParams({
+    request: { url: 'https://api.example.com/reports', method: 'POST', bodyTemplate: '{"page": {{page}}}' },
+  });
+
+  try {
+    await runApiConnector({
+      params,
+      reporter: (e) => events.push(e),
+      outDir: tmp,
+      fetchFn: mockFetch,
+    });
+    assert.deepEqual(seenMethods, ['POST', 'GET']);
+    assert.ok(events.some((e) => e.type === 'done'));
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});

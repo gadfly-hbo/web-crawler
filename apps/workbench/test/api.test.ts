@@ -104,6 +104,27 @@ test('POST /api/tasks：合法参数创建任务并入队，GET 列表/详情可
   });
 });
 
+test('POST /api/tasks：timeoutMs 经入口透传并存入任务参数', async () => {
+  await withApp(async (app) => {
+    const created = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: { ...PARAMS, timeoutMs: 120000 }, dryRun: true }),
+    });
+    assert.equal(created.status, 201);
+    const task = await j(created);
+    const detail = await j(await app.request(`/api/task/${task.id}`));
+    assert.equal(detail.params.timeoutMs, 120000);
+
+    const bad = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: { ...PARAMS, timeoutMs: 0 }, dryRun: true }),
+    });
+    assert.equal(bad.status, 400);
+  });
+});
+
 test('GET /api/meta/industries 返回 19 个证监会门类', async () => {
   await withApp(async (app) => {
     const body = await j(await app.request('/api/meta/industries'));

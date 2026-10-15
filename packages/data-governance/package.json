@@ -9,7 +9,8 @@
     "./evidence": "./src/evidence.ts",
     "./manifest": "./src/manifest.ts",
     "./budget": "./src/budget.ts",
-    "./storage": "./src/storage.ts"
+    "./storage": "./src/storage.ts",
+    "./egress": "./src/egress.ts"
   },
   "scripts": {
     "test": "tsx --test test/*.test.ts",

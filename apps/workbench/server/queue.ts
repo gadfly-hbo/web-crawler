@@ -60,9 +60,20 @@ export class TaskQueue {
         t.error = '服务重启导致任务中断';
         t.finishedAt = new Date().toISOString();
       }
+      // 重启后内存密钥已失：带脱敏密钥的 queued 任务无法还原真实密钥，直接标失败
+      if (
+        t.status === 'queued' &&
+        t.params.sourceType === 'web-scraper' &&
+        typeof (t.params as { apiKey?: string }).apiKey === 'string' &&
+        (t.params as { apiKey?: string }).apiKey!.includes('****')
+      ) {
+        t.status = 'failed';
+        t.error = '检测到重启前残留的脱敏密钥，密钥不随服务重启保留，请重新提交任务';
+        t.finishedAt = new Date().toISOString();
+      }
       this.tasks.set(t.id, t);
     }
-    if (stored.some((t) => t.error === '服务重启导致任务中断')) await this.persist();
+    if (stored.some((t) => t.error === '服务重启导致任务中断' || t.error?.includes('脱敏密钥'))) await this.persist();
     this.pump();
   }
 
