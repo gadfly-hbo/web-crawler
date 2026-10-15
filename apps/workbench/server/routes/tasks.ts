@@ -6,6 +6,7 @@ import {
   type ApiConnectorParams,
   type CninfoTaskParams,
   type TaskParams,
+  type WebScraperParams,
 } from '../../shared/task-params.js';
 import type { AppDeps } from '../types.js';
 
@@ -13,6 +14,22 @@ import type { AppDeps } from '../types.js';
 function normalizeParams(raw: unknown): TaskParams {
   const obj = (raw ?? {}) as Record<string, unknown>;
   const sourceType = (obj.sourceType as string) ?? 'cninfo';
+
+  if (sourceType === 'web-scraper') {
+    const urlsRaw = Array.isArray(obj.urls)
+      ? obj.urls.filter((u): u is string => typeof u === 'string').map((u) => u.trim()).filter(Boolean)
+      : [];
+    return {
+      sourceType: 'web-scraper',
+      name: typeof obj.name === 'string' ? obj.name.trim() : '公开商品标价分析',
+      urls: urlsRaw,
+      mock: typeof obj.mock === 'boolean' ? obj.mock : true,
+      analyze: typeof obj.analyze === 'boolean' ? obj.analyze : true,
+      baselineBrand: typeof obj.baselineBrand === 'string' ? obj.baselineBrand.trim() : 'Brand A',
+      apiKey: typeof obj.apiKey === 'string' ? obj.apiKey.trim() || undefined : undefined,
+      baseUrl: typeof obj.baseUrl === 'string' ? obj.baseUrl.trim() || undefined : undefined,
+    };
+  }
 
   if (sourceType === 'api-connector') {
     const req = (obj.request ?? {}) as Record<string, unknown>;
@@ -110,6 +127,22 @@ export function taskRoutes(deps: AppDeps): Hono {
       return c.json({ error: '任务已结束，不能取消' }, 409);
     }
     return c.json((await deps.queue.cancel(task.id)) ?? task);
+  });
+
+  app.delete('/task/:id', async (c) => {
+    const id = c.req.param('id');
+    const task = deps.queue.get(id);
+    if (!task) return c.json({ error: '任务不存在或已被清理' }, 404);
+    if (task.status === 'queued' || task.status === 'running') {
+      return c.json({ error: '运行中或排队中的任务不可删除，请先取消' }, 409);
+    }
+    const ok = await deps.queue.delete(id);
+    return c.json({ success: ok });
+  });
+
+  app.post('/tasks/clear-previews', async (c) => {
+    const count = await deps.queue.clearPreviews();
+    return c.json({ count });
   });
 
   return app;

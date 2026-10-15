@@ -26,10 +26,12 @@ export function FileList({ taskId, refreshKey }: { taskId: string; refreshKey?: 
     };
   }, [taskId, refreshKey]);
 
-  if (files === null) return <p className="small">读取文件清单…</p>;
-  if (files.length === 0) {
+  const validFiles = files ? files.filter((f) => !f.path.endsWith('.DS_Store') && !f.path.endsWith('Thumbs.db')) : null;
+
+  if (validFiles === null) return <p className="small">读取文件清单…</p>;
+  if (validFiles.length === 0) {
     return (
-      <div className="empty">
+      <div className="empty" style={{ padding: '24px 16px' }}>
         <p>还没有产出文件</p>
         <p className="small">采集任务成功下载后，文件会出现在这里。</p>
       </div>
@@ -37,20 +39,27 @@ export function FileList({ taskId, refreshKey }: { taskId: string; refreshKey?: 
   }
   return (
     <div className="filelist">
-      {files.map((f) => (
-        <div className="file" key={f.path}>
-          <span>📄</span>
-          <span className="name" title={f.path}>
-            {f.path}
-          </span>
-          <span className="chip chip-muted">{fmtSize(f.size)}</span>
-          <span className="ops">
-            <a className="btn btn-ghost btn-sm" href={api.fileUrl(taskId, f.path)} download>
-              下载
-            </a>
-          </span>
-        </div>
-      ))}
+      {validFiles.map((f) => {
+        const isPdf = f.path.toLowerCase().endsWith('.pdf');
+        const isJson = f.path.toLowerCase().endsWith('.json') || f.path.toLowerCase().endsWith('.jsonl');
+        const icon = isPdf ? '📕' : isJson ? '📊' : '📄';
+        return (
+          <div className="file" key={f.path}>
+            <span style={{ fontSize: 15 }}>{icon}</span>
+            <span className="name" title={f.path} style={{ fontWeight: 500 }}>
+              {f.path}
+            </span>
+            <span className="chip chip-muted" style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {fmtSize(f.size)}
+            </span>
+            <span className="ops">
+              <a className="btn btn-ghost btn-sm" href={api.fileUrl(taskId, f.path)} download>
+                下载
+              </a>
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1,0 +1,23 @@
+{
+  "name": "data-governance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "网络爬虫统一数据治理底座：证据索引、交付清单、预算门禁与快照持久化",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./evidence": "./src/evidence.ts",
+    "./manifest": "./src/manifest.ts",
+    "./budget": "./src/budget.ts",
+    "./storage": "./src/storage.ts"
+  },
+  "scripts": {
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

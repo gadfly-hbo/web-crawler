@@ -25,6 +25,7 @@ web-crawler/
 | --- | --- | --- |
 | [`crawlers/cninfo-reports`](./crawlers/cninfo-reports) | 巨潮资讯网 | A 股上市公司财报（年报/中报/季报），支持按公司、行业、年份筛选下载 PDF；`--json` 输出 NDJSON 事件供工作台消费 |
 | [`crawlers/api-connector`](./crawlers/api-connector) | 通用 API 接口 | 声明式 HTTP/RESTful 接口数据与附件采集引擎，支持自动翻页、JSONPath 提取与原子落盘 |
+| [`crawlers/firecrawl-scraper`](./crawlers/firecrawl-scraper) | 通用网页采集 | 基于 Firecrawl 适配层的网页抓取引擎，输出防篡改原始快照（Markdown/HTML/元数据）与 NDJSON 事件流 |
 
 | 应用 | 说明 |
 | --- | --- |

@@ -22,6 +22,7 @@ export class TaskQueue {
   private readonly runner: Runner;
   private readonly dataRoot: string;
   private readonly tasks = new Map<string, TaskRecord>();
+  private readonly secretKeys = new Map<string, string>();
   private active: { id: string; handle: RunningHandle } | null = null;
   /** 'update' (task) 状态变化；'log' (taskId, line) 原始日志行 */
   readonly events = new EventEmitter();
@@ -76,10 +77,19 @@ export class TaskQueue {
   async create(params: TaskParams, dryRun: boolean): Promise<TaskRecord> {
     const now = new Date();
     const id = `${now.getTime().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const storedParams = { ...params };
+    if (storedParams.sourceType === 'web-scraper' && (storedParams as any).apiKey) {
+      const rawKey = String((storedParams as any).apiKey).trim();
+      if (rawKey) {
+        this.secretKeys.set(id, rawKey);
+        (storedParams as any).apiKey =
+          rawKey.length <= 8 ? '****' : `${rawKey.slice(0, 3)}****${rawKey.slice(-4)}`;
+      }
+    }
     const task: TaskRecord = {
       id,
-      title: summarizeTask(params, dryRun),
-      params,
+      title: summarizeTask(storedParams, dryRun),
+      params: storedParams,
       dryRun,
       status: 'queued',
       createdAt: now.toISOString(),
@@ -89,7 +99,11 @@ export class TaskQueue {
       failures: [],
       outDir: path.join(
         this.dataRoot,
-        (params.sourceType ?? 'cninfo') === 'api-connector' ? 'api-connector' : 'cninfo-reports',
+        params.sourceType === 'web-scraper'
+          ? 'firecrawl-scraper'
+          : params.sourceType === 'api-connector'
+            ? 'api-connector'
+            : 'cninfo-reports',
         id,
       ),
       logFile: path.join(this.logsDir, `${id}.ndjson`),
@@ -122,6 +136,33 @@ export class TaskQueue {
     return task;
   }
 
+  async delete(id: string): Promise<boolean> {
+    const task = this.tasks.get(id);
+    if (!task) return false;
+    if (task.status === 'queued' || task.status === 'running') {
+      return false;
+    }
+    this.tasks.delete(id);
+    await this.persist();
+    this.events.emit('delete', id);
+    return true;
+  }
+
+  async clearPreviews(): Promise<number> {
+    let count = 0;
+    for (const [id, task] of this.tasks.entries()) {
+      if (task.dryRun && task.status !== 'queued' && task.status !== 'running') {
+        this.tasks.delete(id);
+        this.events.emit('delete', id);
+        count++;
+      }
+    }
+    if (count > 0) {
+      await this.persist();
+    }
+    return count;
+  }
+
   private pump(): void {
     if (this.active) return;
     const next = this.list()
@@ -130,7 +171,12 @@ export class TaskQueue {
     if (!next) return;
     next.status = 'running';
     next.startedAt = new Date().toISOString();
-    this.active = { id: next.id, handle: this.runner(next, (line) => this.onLogLine(next, line)) };
+    const execParams = { ...next.params };
+    if (this.secretKeys.has(next.id)) {
+      (execParams as any).apiKey = this.secretKeys.get(next.id);
+    }
+    const execTask = { ...next, params: execParams };
+    this.active = { id: next.id, handle: this.runner(execTask, (line) => this.onLogLine(next, line)) };
     void this.persist();
     this.events.emit('update', next);
     this.active.handle.done
@@ -154,6 +200,7 @@ export class TaskQueue {
 
   /** 终态落盘；磁盘错误不升级为进程崩溃（任务内存态已正确，下次启动从磁盘恢复近似状态）。 */
   private reportDone(task: TaskRecord): void {
+    this.secretKeys.delete(task.id);
     void this.onProcessDone(task).catch((err) => {
       console.error('[workbench] 任务状态落盘失败：', err);
     });

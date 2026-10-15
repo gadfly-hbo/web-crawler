@@ -1,0 +1,35 @@
+{
+  "name": "firecrawl-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "基于 Firecrawl 适配层的通用网页采集与原始快照引擎",
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./port": "./src/port.ts",
+    "./adapter": "./src/adapter.ts",
+    "./mock": "./src/mock-adapter.ts",
+    "./storage": "./src/storage.ts",
+    "./events": "./src/events.ts",
+    "./extractor": "./src/extractor.ts",
+    "./analyzer": "./src/analyzer.ts",
+    "./pipeline": "./src/pipeline.ts",
+    "./evidence": "./src/evidence.ts",
+    "./budget-gate": "./src/budget-gate.ts",
+    "./llm-extractor": "./src/llm-extractor.ts",
+    "./manifest": "./src/manifest.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "data-governance": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

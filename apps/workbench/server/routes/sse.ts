@@ -17,7 +17,11 @@ export function sseRoutes(deps: AppDeps): Hono {
       const onUpdate = (t: TaskRecord) => {
         void stream.writeSSE({ event: 'task', data: JSON.stringify(t) }).catch(() => {});
       };
+      const onDelete = (id: string) => {
+        void stream.writeSSE({ event: 'delete', data: id }).catch(() => {});
+      };
       queue.events.on('update', onUpdate);
+      queue.events.on('delete', onDelete);
       try {
         for (const t of queue.list()) {
           await stream.writeSSE({ event: 'task', data: JSON.stringify(t) });
@@ -27,6 +31,7 @@ export function sseRoutes(deps: AppDeps): Hono {
         });
       } finally {
         queue.events.off('update', onUpdate);
+        queue.events.off('delete', onDelete);
       }
     });
   });

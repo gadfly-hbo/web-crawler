@@ -76,6 +76,65 @@ test('buildCrawlerSpawnSpec: api-connector 分发到 api-connector 爬虫并序�
   assert.equal(parsed.sourceType, 'api-connector');
 });
 
+test('buildCrawlerSpawnSpec: web-scraper 分发到 firecrawl-scraper 爬虫并带参数', () => {
+  const webParams = {
+    sourceType: 'web-scraper' as const,
+    name: '商品价格对比',
+    urls: ['https://brand-a.example/1', 'https://brand-b.example/2'],
+    mock: true,
+    analyze: true,
+    baselineBrand: 'Brand A',
+  };
+
+  const spec = buildCrawlerSpawnSpec(
+    {
+      params: webParams,
+      dryRun: false,
+      outDir: '/data/out-web',
+    },
+    dummyRepoRoot,
+  );
+
+  assert.equal(spec.cwd, path.join(dummyRepoRoot, 'crawlers', 'firecrawl-scraper'));
+  assert.ok(spec.args.includes(path.join(dummyRepoRoot, 'crawlers', 'firecrawl-scraper', 'src', 'main.ts')));
+  assert.ok(spec.args.includes('--json'));
+  assert.ok(spec.args.includes('--urls'));
+  assert.ok(spec.args.includes('https://brand-a.example/1,https://brand-b.example/2'));
+  assert.ok(spec.args.includes('--mock'));
+  assert.ok(spec.args.includes('--analyze'));
+  assert.ok(spec.args.includes('--baseline'));
+  assert.ok(spec.args.includes('Brand A'));
+  assert.ok(spec.args.includes('/data/out-web'));
+});
+
+test('buildCrawlerSpawnSpec: web-scraper 支持透传 apiKey 与 baseUrl 参数及注入 env', () => {
+  const webParams = {
+    sourceType: 'web-scraper' as const,
+    name: '云端商品抓取',
+    urls: ['https://shop.example/1'],
+    mock: false,
+    apiKey: 'fc-test-key-123456',
+    baseUrl: 'https://custom-firecrawl.example',
+  };
+
+  const spec = buildCrawlerSpawnSpec(
+    {
+      params: webParams,
+      dryRun: false,
+      outDir: '/data/out-real',
+    },
+    dummyRepoRoot,
+  );
+
+  assert.ok(!spec.args.includes('--mock'), '真实模式不应包含 --mock');
+  assert.ok(spec.args.includes('--api-key'));
+  assert.ok(spec.args.includes('fc-test-key-123456'));
+  assert.ok(spec.args.includes('--base-url'));
+  assert.ok(spec.args.includes('https://custom-firecrawl.example'));
+  assert.equal(spec.env?.FIRECRAWL_API_KEY, 'fc-test-key-123456');
+  assert.equal(spec.env?.FIRECRAWL_BASE_URL, 'https://custom-firecrawl.example');
+});
+
 test('buildCrawlerSpawnSpec: 未知 sourceType 抛出友好异常', () => {
   assert.throws(
     () =>
@@ -90,3 +149,4 @@ test('buildCrawlerSpawnSpec: 未知 sourceType 抛出友好异常', () => {
     /不支持的数据源类型: unsupported/,
   );
 });
+

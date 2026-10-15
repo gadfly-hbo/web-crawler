@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-import { paramsToCliArgs, type CninfoTaskParams, type TaskParams } from '../shared/task-params.js';
+import { paramsToCliArgs, type CninfoTaskParams, type TaskParams, type WebScraperParams } from '../shared/task-params.js';
 import type { Runner } from './queue.js';
 
 export interface SpawnSpec {
@@ -122,6 +122,46 @@ export function buildCrawlerSpawnSpec(
       command: process.execPath,
       args,
       cwd: crawlerDir,
+    };
+  }
+
+  if (sourceType === 'web-scraper') {
+    const crawlerDir = path.join(repoRoot, 'crawlers', 'firecrawl-scraper');
+    const entry = path.join(crawlerDir, 'src', 'main.ts');
+    const webParams = task.params as WebScraperParams;
+    const args = [
+      '--import',
+      'tsx',
+      entry,
+      '--json',
+      '--urls',
+      webParams.urls.join(','),
+      '-o',
+      task.outDir,
+    ];
+    if (webParams.mock ?? true) {
+      args.push('--mock');
+    }
+    if (webParams.analyze ?? true) {
+      args.push('--analyze');
+    }
+    if (webParams.baselineBrand) {
+      args.push('--baseline', webParams.baselineBrand);
+    }
+    const env: NodeJS.ProcessEnv = {};
+    if (webParams.apiKey) {
+      env.FIRECRAWL_API_KEY = webParams.apiKey;
+      args.push('--api-key', webParams.apiKey);
+    }
+    if (webParams.baseUrl) {
+      env.FIRECRAWL_BASE_URL = webParams.baseUrl;
+      args.push('--base-url', webParams.baseUrl);
+    }
+    return {
+      command: process.execPath,
+      args,
+      cwd: crawlerDir,
+      env: Object.keys(env).length > 0 ? env : undefined,
     };
   }
 

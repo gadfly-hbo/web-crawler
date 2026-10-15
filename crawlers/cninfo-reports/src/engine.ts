@@ -313,6 +313,51 @@ export async function run(opts: EngineOptions, reporter: Reporter): Promise<Craw
     }
   }
 
+  if (!opts.dryRun && summary.outDir) {
+    try {
+      const { createAndSaveDeliveryManifest } = await import('data-governance/manifest');
+      const { readdir } = await import('node:fs/promises');
+      const filesToSign: string[] = [];
+      const scanFiles = async (dir: string, prefix: string) => {
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const e of entries) {
+          if (e.name.startsWith('.') || e.name.endsWith('.tmp') || e.name === 'manifest.json') continue;
+          if (e.isFile()) {
+            filesToSign.push(prefix ? `${prefix}/${e.name}` : e.name);
+          } else if (e.isDirectory()) {
+            await scanFiles(path.join(dir, e.name), prefix ? `${prefix}/${e.name}` : e.name);
+          }
+        }
+      };
+      await scanFiles(summary.outDir, '');
+
+      if (filesToSign.length > 0) {
+        await createAndSaveDeliveryManifest({
+          dir: summary.outDir,
+          datasetId: path.basename(summary.outDir),
+          sourceType: 'cninfo-reports',
+          generatorName: 'cninfo-reports',
+          generatorVersion: '0.1.0',
+          generatorDesc: 'A股上市公司财报与公告采集引擎',
+          recordsCount: summary.downloaded + summary.skipped,
+          validCount: summary.downloaded,
+          filesToSign,
+          schemaFields: [
+            { name: 'secCode', type: 'string', description: '6位A股证券代码', nullable: false },
+            { name: 'secName', type: 'string', description: '公司证券简称', nullable: false },
+            { name: 'type', type: 'string', description: '报告类型 (annual/semi/q1/q3)', nullable: false },
+            { name: 'title', type: 'string', description: '公告标题', nullable: false },
+            { name: 'publishedAt', type: 'string', description: '公告发布时间戳', nullable: false },
+            { name: 'url', type: 'string', description: '巨潮资讯网原始下载链接', nullable: false },
+            { name: 'file', type: 'string', description: '本地保存相对路径', nullable: false },
+          ],
+        });
+      }
+    } catch {
+      // 容错：不影响原有下载结果
+    }
+  }
+
   if (opts.dryRun) {
     reporter({ type: 'preview', companies: summary.companies, reports: summary.matched });
   }

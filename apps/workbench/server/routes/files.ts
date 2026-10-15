@@ -24,6 +24,7 @@ async function walkFiles(root: string): Promise<FileEntry[]> {
       return;
     }
     for (const e of entries) {
+      if (e.name === '.DS_Store' || e.name === 'Thumbs.db') continue;
       const full = path.join(dir, e.name);
       if (e.isDirectory()) await rec(full, `${prefix}${e.name}/`);
       else if (e.isFile()) {
@@ -66,7 +67,11 @@ export function fileRoutes(deps: AppDeps): Hono {
     if (!st?.isFile()) return c.json({ error: '文件不存在' }, 404);
     const buf = await readFile(abs);
     return c.body(new Uint8Array(buf), 200, {
-      'Content-Type': abs.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+      'Content-Type': abs.endsWith('.pdf')
+        ? 'application/pdf'
+        : abs.endsWith('.json')
+          ? 'application/json'
+          : 'application/octet-stream',
       'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(abs))}`,
     });
   });

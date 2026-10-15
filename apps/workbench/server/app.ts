@@ -1,8 +1,10 @@
 /** HTTP API：Hono 应用装配入口（模块化路由组装）。 */
 import { Hono } from 'hono';
 
+import { evidenceRoutes } from './routes/evidence.js';
 import { fileRoutes } from './routes/files.js';
 import { metaRoutes } from './routes/meta.js';
+import { settingsRoutes } from './routes/settings.js';
 import { sseRoutes } from './routes/sse.js';
 import { taskRoutes } from './routes/tasks.js';
 import type { AppDeps } from './types.js';
@@ -18,6 +20,8 @@ export function buildApp(deps: AppDeps): Hono {
   app.route('/api', taskRoutes(deps));
   app.route('/api', fileRoutes(deps));
   app.route('/api', sseRoutes(deps));
+  app.route('/api', evidenceRoutes(deps));
+  app.route('/api', settingsRoutes(deps));
 
   return app;
 }

@@ -1,6 +1,11 @@
 import type { StockEntry } from '../../api';
 import type { TaskRecord } from '../../../../shared/task';
-import type { ApiConnectorParams, ReportType, SourceType } from '../../../../shared/task-params';
+import type {
+  ApiConnectorParams,
+  ReportType,
+  ScenarioId,
+  SourceType,
+} from '../../../../shared/task-params';
 
 export const ALL_TYPES: ReportType[] = ['annual', 'semi', 'q1', 'q3'];
 
@@ -25,6 +30,7 @@ export interface ApiConnectorFormState {
 
 export interface NewTaskState {
   stage: 1 | 2;
+  scenario: ScenarioId;
   sourceType: SourceType;
   mode: 'company' | 'industry';
   companies: StockEntry[];
@@ -37,14 +43,28 @@ export interface NewTaskState {
   types: ReportType[];
   sleepMs: number;
   limitText: string;
+  weatherCity: string;
   apiParams: ApiConnectorFormState;
+  productUrlsText: string;
+  productMock: boolean;
+  productBaselineBrand: string;
+  productApiKey: string;
+  productBaseUrl: string;
   errors: string[];
   previewTask: TaskRecord | null;
 }
 
 export type NewTaskAction =
   | { type: 'SET_STAGE'; payload: 1 | 2 }
+  | { type: 'SET_SCENARIO'; payload: ScenarioId }
   | { type: 'SET_SOURCE_TYPE'; payload: SourceType }
+  | { type: 'SET_WEATHER_CITY'; payload: string }
+  | { type: 'SET_PRODUCT_URLS_TEXT'; payload: string }
+  | { type: 'SET_PRODUCT_MOCK'; payload: boolean }
+  | { type: 'SET_PRODUCT_BASELINE'; payload: string }
+  | { type: 'SET_PRODUCT_API_KEY'; payload: string }
+  | { type: 'SET_PRODUCT_BASE_URL'; payload: string }
+  | { type: 'LOAD_PRODUCT_SAMPLE' }
   | { type: 'SET_MODE'; payload: 'company' | 'industry' }
   | { type: 'SET_COMPANIES'; payload: StockEntry[] }
   | { type: 'ADD_COMPANY'; payload: StockEntry }
@@ -64,3 +84,4 @@ export type NewTaskAction =
   | { type: 'SET_ERRORS'; payload: string[] }
   | { type: 'SET_PREVIEW_TASK'; payload: TaskRecord | null }
   | { type: 'RESET_PREVIEW' };
+

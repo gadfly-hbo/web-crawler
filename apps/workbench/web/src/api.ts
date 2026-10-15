@@ -36,6 +36,14 @@ export const api = {
   async cancelTask(id: string): Promise<void> {
     await fetch(`/api/task/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
   },
+  async deleteTask(id: string): Promise<boolean> {
+    const res = await fetch(`/api/task/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return res.ok;
+  },
+  async clearPreviews(): Promise<{ count: number }> {
+    const res = await fetch('/api/tasks/clear-previews', { method: 'POST' });
+    return json<{ count: number }>(res);
+  },
   async files(id: string): Promise<Array<{ path: string; size: number; mtime: number }>> {
     return json<{ files: Array<{ path: string; size: number; mtime: number }> }>(
       await fetch(`/api/task/${encodeURIComponent(id)}/files`),
@@ -57,5 +65,37 @@ export const api = {
     const res = await fetch(`/api/meta/stocks?q=${encodeURIComponent(q)}`);
     if (res.status === 503) return { stocks: [], error: (await json<{ error: string }>(res)).error };
     return { stocks: (await json<{ stocks: StockEntry[] }>(res)).stocks };
+  },
+  async getFirecrawlSettings(): Promise<{
+    hasEnvApiKey: boolean;
+    maskedEnvApiKey: string | null;
+    envBaseUrl: string;
+    isSelfHosted: boolean;
+  }> {
+    return json(await fetch('/api/settings/firecrawl'));
+  },
+  async saveFirecrawlSettings(data: { apiKey?: string; baseUrl?: string }): Promise<{
+    hasEnvApiKey: boolean;
+    maskedEnvApiKey: string | null;
+    envBaseUrl: string;
+  }> {
+    const res = await fetch('/api/settings/firecrawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return json(res);
+  },
+  async testFirecrawlConnection(data: { apiKey?: string; baseUrl?: string }): Promise<{
+    ok: boolean;
+    message?: string;
+    error?: string;
+  }> {
+    const res = await fetch('/api/settings/firecrawl/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return json(res);
   },
 };

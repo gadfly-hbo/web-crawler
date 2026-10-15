@@ -146,16 +146,21 @@ export async function runApiConnector(options: RunApiConnectorOptions): Promise<
     await mkdir(outDir, { recursive: true });
   }
 
+  const { BudgetGate } = await import('data-governance/budget');
+  const budgetGate = new BudgetGate({ maxCalls: maxPages + 5 });
+
   try {
     for (let page = startPage; page < startPage + maxPages; page++) {
       if (page > startPage && params.sleepMs > 0) {
         await sleep(params.sleepMs);
       }
 
+      budgetGate.checkAndReserve(100);
       const { url, init } = buildRequest(params, page, pageSize);
       let res: Response;
       try {
         res = await fetchFn(url, init);
+        budgetGate.recordUsage({ tokens: 100 });
       } catch (netErr) {
         const reason = netErr instanceof Error ? netErr.message : String(netErr);
         reporter({ type: 'queryError', target: `第 ${page} 页`, reason });
@@ -342,6 +347,48 @@ export async function runApiConnector(options: RunApiConnectorOptions): Promise<
       }
       if (items.length < pageSize) {
         break;
+      }
+    }
+
+    if (!dryRun && outDir) {
+      try {
+        const { createAndSaveDeliveryManifest } = await import('data-governance/manifest');
+        const { readdir } = await import('node:fs/promises');
+        const filesToSign: string[] = [];
+        const scanFiles = async (dir: string, prefix: string) => {
+          const entries = await readdir(dir, { withFileTypes: true });
+          for (const e of entries) {
+            if (e.name.startsWith('.') || e.name.endsWith('.tmp') || e.name === 'manifest.json') continue;
+            if (e.isFile()) {
+              filesToSign.push(prefix ? `${prefix}/${e.name}` : e.name);
+            } else if (e.isDirectory()) {
+              await scanFiles(path.join(dir, e.name), prefix ? `${prefix}/${e.name}` : e.name);
+            }
+          }
+        };
+        await scanFiles(outDir, '');
+
+        if (filesToSign.length > 0) {
+          await createAndSaveDeliveryManifest({
+            dir: outDir,
+            datasetId: path.basename(outDir),
+            sourceType: 'api-connector',
+            generatorName: 'api-connector',
+            generatorVersion: '0.1.0',
+            generatorDesc: '通用声明式 API 数据采集引擎',
+            recordsCount: summary.downloaded + summary.skipped,
+            validCount: summary.downloaded,
+            filesToSign,
+            schemaFields: [
+              { name: 'key', type: 'string', description: '数据条目主键', nullable: false },
+              { name: 'title', type: 'string', description: '条目标题', nullable: false },
+              { name: 'file', type: 'string', description: '保存文件相对路径', nullable: false },
+              { name: 'time', type: 'string', description: '抓取时间戳', nullable: false },
+            ],
+          });
+        }
+      } catch {
+        // 容错：不影响正常执行
       }
     }
 

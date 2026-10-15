@@ -202,3 +202,155 @@ test('POST /api/tasks：非法 API Connector 参数返回 400 与对应中文错
   });
 });
 
+test('POST /api/tasks：合法 web-scraper 参数创建成功，支持商品价格分析任务', async () => {
+  await withApp(async (app) => {
+    const webPayload = {
+      sourceType: 'web-scraper',
+      name: '品牌鞋靴标价对比',
+      urls: ['https://brand-a.example/p1', 'https://brand-b.example/p2'],
+      mock: true,
+      analyze: true,
+      baselineBrand: 'Brand A',
+    };
+    const res = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: webPayload, dryRun: false }),
+    });
+    assert.equal(res.status, 201);
+    const task = await j(res);
+    assert.equal(task.params.sourceType, 'web-scraper');
+    assert.equal(task.params.name, '品牌鞋靴标价对比');
+    assert.equal(task.params.urls.length, 2);
+    assert.ok(task.outDir.includes('firecrawl-scraper') || task.outDir.includes('task-'));
+  });
+});
+
+test('POST /api/tasks：非法 web-scraper 参数拒绝并返回中文错误', async () => {
+  await withApp(async (app) => {
+    const badPayload = {
+      sourceType: 'web-scraper',
+      name: '',
+      urls: ['not-a-valid-url'],
+    };
+    const res = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: badPayload, dryRun: false }),
+    });
+    assert.equal(res.status, 400);
+    const body = await j(res);
+    assert.ok(body.errors.some((e: string) => e.includes('任务名称不能为空')));
+    assert.ok(body.errors.some((e: string) => e.includes('URL 格式不合法')));
+  });
+});
+
+test('DELETE /api/task/:id：删除已结束任务成功；不存在返回 404', async () => {
+  await withApp(async (app) => {
+    const createRes = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: PARAMS, dryRun: true }),
+    });
+    const task = await j(createRes);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    const delRes = await app.request(`/api/task/${task.id}`, { method: 'DELETE' });
+    assert.equal(delRes.status, 200);
+    const delBody = await j(delRes);
+    assert.equal(delBody.success, true);
+
+    const getRes = await app.request(`/api/task/${task.id}`);
+    assert.equal(getRes.status, 404);
+
+    const notFoundDel = await app.request('/api/task/non-existent-id', { method: 'DELETE' });
+    assert.equal(notFoundDel.status, 404);
+  });
+});
+
+test('POST /api/tasks/clear-previews：一键清理所有已完成的 dryRun 预览任务', async () => {
+  await withApp(async (app) => {
+    await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: PARAMS, dryRun: false }),
+    });
+    await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: PARAMS, dryRun: true }),
+    });
+    await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: PARAMS, dryRun: true }),
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    const clearRes = await app.request('/api/tasks/clear-previews', { method: 'POST' });
+    assert.equal(clearRes.status, 200);
+    const clearBody = await j(clearRes);
+    assert.ok(clearBody.count >= 2);
+
+    const listRes = await app.request('/api/tasks');
+    const { tasks } = await j(listRes);
+    assert.ok(tasks.every((t: any) => !t.dryRun));
+  });
+});
+
+test('Firecrawl Settings API：GET 获取配置、POST 更新配置并自动脱敏', async () => {
+  await withApp(async (app) => {
+    // 1. GET /api/settings/firecrawl
+    const getRes = await app.request('/api/settings/firecrawl');
+    assert.equal(getRes.status, 200);
+    const getBody = await j(getRes);
+    assert.ok('hasEnvApiKey' in getBody);
+    assert.ok('envBaseUrl' in getBody);
+
+    // 2. POST /api/settings/firecrawl
+    const postRes = await app.request('/api/settings/firecrawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: 'fc-unit-test-secret-9999',
+        baseUrl: 'http://localhost:3002',
+      }),
+    });
+    assert.equal(postRes.status, 200);
+    const postBody = await j(postRes);
+    assert.equal(postBody.ok, true);
+    assert.equal(postBody.hasEnvApiKey, true);
+    assert.ok(postBody.maskedEnvApiKey?.includes('****'));
+    assert.equal(postBody.envBaseUrl, 'http://localhost:3002');
+  });
+});
+
+test('POST /api/tasks：web-scraper 任务敏感 apiKey 在入库与详情中自动脱敏', async () => {
+  await withApp(async (app) => {
+    const rawApiKey = 'fc-super-secret-key-12345';
+    const res = await app.request('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        params: {
+          sourceType: 'web-scraper',
+          name: '带凭据的商品抓取',
+          urls: ['https://brand-a.example/shoes/101'],
+          mock: true,
+          apiKey: rawApiKey,
+          baseUrl: 'https://api.firecrawl.dev',
+        },
+        dryRun: false,
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const task = await j(res);
+    // 验证返回值中 apiKey 已被脱敏
+    assert.notEqual(task.params.apiKey, rawApiKey);
+    assert.ok(task.params.apiKey.includes('****'));
+  });
+});
+

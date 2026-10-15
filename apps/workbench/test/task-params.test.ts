@@ -120,3 +120,36 @@ test('summarizeTask 生成运营可读的摘要名', () => {
     '平安银行 · 2025-07-01~2025-09-30 · 中报/年报 · 预览',
   );
 });
+
+test('createWeatherApiParams 生成合法的天气采集参数并通过校验', async () => {
+  const { createWeatherApiParams } = await import('../shared/task-params.js');
+  const p = createWeatherApiParams('上海');
+  assert.equal(p.sourceType, 'api-connector');
+  assert.equal(p.name, '上海天气数据采集');
+  assert.ok(p.request.url.includes('wttr.in'));
+  assert.deepEqual(validateTaskParams(p), []);
+  assert.equal(summarizeTask(p, false), 'API采集 · 上海天气数据采集');
+  assert.equal(summarizeTask(p, true), '【预览】API采集 · 上海天气数据采集');
+});
+
+test('COLLECTOR_SCENARIOS 包含商品价格对比、固化爬虫、天气API与定制场景', async () => {
+  const { COLLECTOR_SCENARIOS } = await import('../shared/task-params.js');
+  const ids = COLLECTOR_SCENARIOS.map((s) => s.id);
+  assert.ok(ids.includes('product-price-comparison'));
+  assert.ok(ids.includes('cninfo-reports'));
+  assert.ok(ids.includes('weather-api'));
+  assert.ok(ids.includes('custom-request'));
+});
+
+test('createSampleProductComparisonParams 生成合法的商品对比参数并通过校验', async () => {
+  const { createSampleProductComparisonParams } = await import('../shared/task-params.js');
+  const p = createSampleProductComparisonParams();
+  assert.equal(p.sourceType, 'web-scraper');
+  assert.equal(p.urls.length, 9);
+  assert.equal(p.mock, true);
+  assert.equal(p.analyze, true);
+  assert.deepEqual(validateTaskParams(p), []);
+  assert.equal(summarizeTask(p, false), '商品价格分析 · 品牌A/B/C商品标价中位数对比样板');
+});
+
+

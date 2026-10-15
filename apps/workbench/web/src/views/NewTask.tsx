@@ -3,13 +3,16 @@ import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import { api } from '../api';
 import type { TaskRecord } from '../../../shared/task';
 import { validateTaskParams } from '../../../shared/task-params';
-import { ApiConnectorPicker } from './new-task/ApiConnectorPicker';
+import { CustomScenarioGuide } from './new-task/CustomScenarioGuide';
 import { PreviewPanel } from './new-task/PreviewPanel';
 import { getTaskParams, initialNewTaskState, newTaskReducer } from './new-task/reducer';
+import { ScenarioSelector } from './new-task/ScenarioSelector';
 import { ScopePicker } from './new-task/ScopePicker';
 import { StageBar } from './new-task/StageBar';
 import { TimeTypePicker } from './new-task/TimeTypePicker';
 import { usePreviewSync } from './new-task/usePreviewSync';
+import { WeatherPicker } from './new-task/WeatherPicker';
+import { ProductPricePicker } from './new-task/ProductPricePicker';
 
 export function NewTask(props: { onCreated: (id: string) => void; showToast: (m: string) => void }) {
   const [state, dispatch] = useReducer(newTaskReducer, initialNewTaskState);
@@ -37,11 +40,18 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
   };
 
   const startCollect = async () => {
+    const errs = validateTaskParams(params, state.industryList);
+    dispatch({ type: 'SET_ERRORS', payload: errs });
+    if (errs.length > 0) return;
+
     const { task, errors: serverErrors } = await api.createTask(params, false);
     if (serverErrors) {
       dispatch({ type: 'SET_ERRORS', payload: serverErrors });
       dispatch({ type: 'SET_STAGE', payload: 1 });
       return;
+    }
+    if (state.previewTask?.id) {
+      void api.deleteTask(state.previewTask.id).catch(() => {});
     }
     props.showToast('采集任务已开始');
     props.onCreated(task!.id);
@@ -50,7 +60,7 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
   return (
     <div className="view">
       <h1 className="page-title">新建采集任务</h1>
-      <p className="view-desc">支持巨潮财报批量采集与通用声明式 API 数据/附件采集。先预览数量确认范围，再正式开始。</p>
+      <p className="view-desc">选择已固化的数据采集场景，设置极简业务参数即可一键预览并采集。</p>
       <StageBar stage={state.stage} />
 
       {state.errors.length > 0 && (
@@ -63,36 +73,14 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
         </div>
       )}
 
-      <div className="card">
-        <h3 className="card-h">采集数据源类型</h3>
-        <div className="radio-row" style={{ marginBottom: 8 }}>
-          <label>
-            <input
-              type="radio"
-              checked={state.sourceType === 'cninfo'}
-              onChange={() => dispatch({ type: 'SET_SOURCE_TYPE', payload: 'cninfo' })}
-            />
-            <strong>巨潮资讯网</strong> · A 股上市公司财报
-          </label>
-          <label>
-            <input
-              type="radio"
-              checked={state.sourceType === 'api-connector'}
-              onChange={() => dispatch({ type: 'SET_SOURCE_TYPE', payload: 'api-connector' })}
-            />
-            <strong>通用 API 连接器</strong> · 声明式接口采集
-          </label>
-        </div>
-        <span className="small">
-          {state.sourceType === 'cninfo'
-            ? '针对官方信息披露平台，批量下载上市公司官方年报、半年报与季报原件。'
-            : '支持配置任意 GET/POST 结构化数据或文件下载接口，驱动自动翻页与落盘。'}
-        </span>
-      </div>
-
       {state.stage === 1 ? (
         <>
-          {state.sourceType === 'cninfo' ? (
+          <ScenarioSelector
+            scenario={state.scenario}
+            onSelect={(sc) => dispatch({ type: 'SET_SCENARIO', payload: sc })}
+          />
+
+          {state.scenario === 'cninfo-reports' && (
             <>
               <ScopePicker
                 mode={state.mode}
@@ -122,21 +110,51 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
                 onLimitTextChange={(lim) => dispatch({ type: 'SET_LIMIT_TEXT', payload: lim })}
               />
             </>
-          ) : (
-            <ApiConnectorPicker
-              apiParams={state.apiParams}
-              onChange={(p) => dispatch({ type: 'SET_API_PARAMS', payload: p })}
-              onLoadTemplate={(t) => dispatch({ type: 'LOAD_API_TEMPLATE', payload: t })}
+          )}
+
+          {state.scenario === 'product-price-comparison' && (
+            <ProductPricePicker
+              urlsText={state.productUrlsText}
+              mock={state.productMock}
+              baselineBrand={state.productBaselineBrand}
+              apiKey={state.productApiKey}
+              baseUrl={state.productBaseUrl}
+              onChangeUrlsText={(text) => dispatch({ type: 'SET_PRODUCT_URLS_TEXT', payload: text })}
+              onChangeMock={(mock) => dispatch({ type: 'SET_PRODUCT_MOCK', payload: mock })}
+              onChangeBaseline={(b) => dispatch({ type: 'SET_PRODUCT_BASELINE', payload: b })}
+              onChangeApiKey={(k) => dispatch({ type: 'SET_PRODUCT_API_KEY', payload: k })}
+              onChangeBaseUrl={(u) => dispatch({ type: 'SET_PRODUCT_BASE_URL', payload: u })}
+              onLoadSample={() => dispatch({ type: 'LOAD_PRODUCT_SAMPLE' })}
             />
           )}
-          <button className="btn btn-primary" onClick={() => void startPreview()}>
-            预览数量
-          </button>
+
+          {state.scenario === 'weather-api' && (
+            <WeatherPicker
+              city={state.weatherCity}
+              onChangeCity={(city) => dispatch({ type: 'SET_WEATHER_CITY', payload: city })}
+            />
+          )}
+
+          {state.scenario === 'custom-request' && (
+            <CustomScenarioGuide showToast={props.showToast} />
+          )}
+
+          {state.scenario === 'product-price-comparison' ? (
+            <button className="btn btn-primary" onClick={() => void startCollect()}>
+              开始采集与中位数分析
+            </button>
+          ) : (
+            state.scenario !== 'custom-request' && (
+              <button className="btn btn-primary" onClick={() => void startPreview()}>
+                预览数量
+              </button>
+            )
+          )}
         </>
       ) : (
         <PreviewPanel
           previewTask={state.previewTask}
-          sleepMs={params.sleepMs}
+          sleepMs={'sleepMs' in params ? params.sleepMs : 1000}
           onStartCollect={() => void startCollect()}
           onBackToEdit={() => dispatch({ type: 'RESET_PREVIEW' })}
         />

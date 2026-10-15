@@ -16,6 +16,9 @@
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "data-governance": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^26.6.2",
     "tsx": "^4.23.15",

@@ -1,4 +1,10 @@
-import { DEFAULT_SLEEP_MS, type ApiConnectorParams, type TaskParams } from '../../../../shared/task-params';
+import {
+  DEFAULT_SLEEP_MS,
+  createWeatherApiParams,
+  type ApiConnectorParams,
+  type SourceType,
+  type TaskParams,
+} from '../../../../shared/task-params';
 import { ALL_TYPES, type ApiConnectorFormState, type NewTaskAction, type NewTaskState } from './types';
 
 export const initialApiFormState: ApiConnectorFormState = {
@@ -20,8 +26,21 @@ export const initialApiFormState: ApiConnectorFormState = {
   sleepMs: DEFAULT_SLEEP_MS,
 };
 
+export const DEFAULT_PRODUCT_SAMPLE_URLS = [
+  'https://brand-a.example/shoes/101',
+  'https://brand-a.example/shoes/102',
+  'https://brand-a.example/shoes/103',
+  'https://brand-b.example/shoes/201',
+  'https://brand-b.example/shoes/202',
+  'https://brand-b.example/shoes/203',
+  'https://brand-c.example/shoes/301',
+  'https://brand-c.example/shoes/302',
+  'https://brand-c.example/shoes/303',
+].join('\n');
+
 export const initialNewTaskState: NewTaskState = {
   stage: 1,
+  scenario: 'cninfo-reports',
   sourceType: 'cninfo',
   mode: 'company',
   companies: [],
@@ -34,12 +53,51 @@ export const initialNewTaskState: NewTaskState = {
   types: ALL_TYPES,
   sleepMs: DEFAULT_SLEEP_MS,
   limitText: '',
+  weatherCity: '北京',
   apiParams: initialApiFormState,
+  productUrlsText: DEFAULT_PRODUCT_SAMPLE_URLS,
+  productMock: true,
+  productBaselineBrand: 'Brand A',
+  productApiKey: (() => {
+    try {
+      return localStorage.getItem('firecrawl_api_key') || '';
+    } catch {
+      return '';
+    }
+  })(),
+  productBaseUrl: (() => {
+    try {
+      return localStorage.getItem('firecrawl_base_url') || '';
+    } catch {
+      return '';
+    }
+  })(),
   errors: [],
   previewTask: null,
 };
 
 export function getTaskParams(state: NewTaskState): TaskParams {
+  if (state.scenario === 'product-price-comparison') {
+    const urls = state.productUrlsText
+      .split('\n')
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0 && !u.startsWith('#'));
+    return {
+      sourceType: 'web-scraper',
+      name: '公开商品标价与价格带对比',
+      urls: urls.length > 0 ? urls : ['https://brand-a.example/shoes/101'],
+      mock: state.productMock,
+      analyze: true,
+      baselineBrand: state.productBaselineBrand || 'Brand A',
+      apiKey: state.productApiKey.trim() || undefined,
+      baseUrl: state.productBaseUrl.trim() || undefined,
+    };
+  }
+
+  if (state.scenario === 'weather-api') {
+    return createWeatherApiParams(state.weatherCity);
+  }
+
   if (state.sourceType === 'api-connector') {
     let headers: Record<string, string> | undefined = undefined;
     if (state.apiParams.headersJson.trim()) {
@@ -90,8 +148,32 @@ export function getTaskParams(state: NewTaskState): TaskParams {
 
 export function newTaskReducer(state: NewTaskState, action: NewTaskAction): NewTaskState {
   switch (action.type) {
+    case 'SET_SCENARIO': {
+      const scenario = action.payload;
+      let sourceType: SourceType = 'cninfo';
+      if (scenario === 'product-price-comparison') {
+        sourceType = 'web-scraper';
+      } else if (scenario !== 'cninfo-reports') {
+        sourceType = 'api-connector';
+      }
+      return { ...state, scenario, sourceType, errors: [] };
+    }
+    case 'SET_PRODUCT_URLS_TEXT':
+      return { ...state, productUrlsText: action.payload, errors: [] };
+    case 'SET_PRODUCT_MOCK':
+      return { ...state, productMock: action.payload };
+    case 'SET_PRODUCT_BASELINE':
+      return { ...state, productBaselineBrand: action.payload };
+    case 'SET_PRODUCT_API_KEY':
+      return { ...state, productApiKey: action.payload };
+    case 'SET_PRODUCT_BASE_URL':
+      return { ...state, productBaseUrl: action.payload };
+    case 'LOAD_PRODUCT_SAMPLE':
+      return { ...state, productUrlsText: DEFAULT_PRODUCT_SAMPLE_URLS, errors: [] };
     case 'SET_SOURCE_TYPE':
       return { ...state, sourceType: action.payload, errors: [] };
+    case 'SET_WEATHER_CITY':
+      return { ...state, weatherCity: action.payload, errors: [] };
     case 'SET_MODE':
       return { ...state, mode: action.payload };
     case 'SET_COMPANIES':
