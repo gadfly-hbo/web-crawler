@@ -127,6 +127,16 @@ test('失败分级：有产出 → partial；无产出 → failed；error 事件
     const t = await q.create(PARAMS, false);
     await waitFor(() => q.get(t.id)?.status === 'partial');
   });
+  // 预算熔断归类（G5/条件 3）：queryError [BudgetGate] + 有产出 → partial——与 api-connector/rss 分类一致
+  const budget = fakeRunner([
+    JSON.stringify({ type: 'queryError', target: '第 2 页', reason: '[BudgetGate] 预算门禁熔断: CALLS_EXCEEDED (当前: 2, 上限: 1)' }),
+    JSON.stringify({ type: 'file', status: 'downloaded', code: '1', name: 'x', title: 't', path: 'f.pdf', bytes: 1 }),
+    doneLine({ downloaded: 1, failed: 1 }),
+  ]);
+  await withQueue(budget.runner, async (q) => {
+    const t = await q.create(PARAMS, false);
+    await waitFor(() => q.get(t.id)?.status === 'partial');
+  });
   // failed（有 done 但无产出）
   const failed = fakeRunner([doneLine({ downloaded: 0, skipped: 0, failed: 2 })]);
   await withQueue(failed.runner, async (q) => {

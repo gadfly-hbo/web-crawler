@@ -16,6 +16,8 @@ export interface RunApiConnectorOptions {
   outDir: string;
   dryRun?: boolean;
   fetchFn?: typeof fetch;
+  /** 预算池注入（测试 seam，G5/G7）：显式传入替换该场景池；缺省按公式建池 */
+  budgets?: { pagination?: BudgetCounter; download?: BudgetCounter };
 }
 
 export function sanitizeFilename(name: string): string {
@@ -50,7 +52,7 @@ function sleep(ms: number): Promise<void> {
 
 const MAX_REDIRECT_HOPS = 5;
 
-interface BudgetCounter {
+export interface BudgetCounter {
   checkAndReserve(tokens: number): void;
   recordUsage(usage: { tokens: number }): void;
 }
@@ -199,7 +201,14 @@ export async function runApiConnector(options: RunApiConnectorOptions): Promise<
   }
 
   const { BudgetGate } = await import('data-governance/budget');
-  const budgetGate = new BudgetGate({ maxCalls: maxPages + 5 });
+  // N2 预算分池（PRD 决策 1）：每请求 worst-case 1+5 跳；显式关闭无意义的 token/cost 估计（条件 1，探针 C 的 500 跳硬顶反例）
+  const hopAllowance = 1 + MAX_REDIRECT_HOPS;
+  const paginationBudget =
+    options.budgets?.pagination ??
+    new BudgetGate({ maxCalls: maxPages * hopAllowance, maxTokens: undefined, maxCostUsd: undefined });
+  const downloadBudget =
+    options.budgets?.download ??
+    new BudgetGate({ maxCalls: pageSize * maxPages * hopAllowance, maxTokens: undefined, maxCostUsd: undefined });
 
   try {
     for (let page = startPage; page < startPage + maxPages; page++) {
@@ -210,7 +219,7 @@ export async function runApiConnector(options: RunApiConnectorOptions): Promise<
       const { url, init } = buildRequest(params, page, pageSize);
       let res: Response;
       try {
-        res = await guardedFetch(fetchFn, url, init, budgetGate);
+        res = await guardedFetch(fetchFn, url, init, paginationBudget);
       } catch (netErr) {
         const reason = netErr instanceof Error ? netErr.message : String(netErr);
         reporter({ type: 'queryError', target: `第 ${page} 页`, reason });
@@ -289,7 +298,7 @@ export async function runApiConnector(options: RunApiConnectorOptions): Promise<
             } else {
               try {
                 await unlink(partFile).catch(() => {});
-                const fileRes = await guardedFetch(fetchFn, downloadUrl, undefined, budgetGate);
+                const fileRes = await guardedFetch(fetchFn, downloadUrl, undefined, downloadBudget);
                 if (!fileRes.ok) {
                   throw new Error(`HTTP ${fileRes.status} ${fileRes.statusText}`);
                 }

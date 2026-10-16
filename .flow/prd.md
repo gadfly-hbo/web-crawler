@@ -1,71 +1,78 @@
-# PRD — 递延项收敛批（F6 领衔）
+# PRD — 执行治理收尾批（N2 预算定容 + Ctrl-C 孤儿清理）
 
-- 规格 precedence：`.flow/proposal.md` ＞ 本文件；红队 `.flow/red-team.md`（GO-WITH-CONDITIONS，5 条件）已逐条吸收并标注 KA。
+- 规格 precedence：`.flow/proposal.md` ＞ 本文件；红队 `.flow/red-team.md`（GO-WITH-CONDITIONS，6 条件）已逐条吸收并标注。
 - 发布方式：无 issue tracker，落盘 `.flow/prd.md`（既有惯例）。
 
 ## Problem Statement
 
-三处前批评审裁决的递延缺陷仍在伤人：F6 使 mock 商品任务「成功但分析恒空」且 workbench 快照回看 404；限制声明展示只有 RSS 有数据（cninfo/api 不传 limitations、商品任务不渲染卡）；用户取消的任务在超时宽限窗内会被伪「任务超时」红条污染。另有三处小缺口：A19 扫描器的无点 IP 编码与扩展名盲区、RSS 任务标题同质不可区分。
+两处执行治理硬伤：①api-connector 的 BudgetGate 仍是分页时代定容（`maxCalls = maxPages + 5`），WC-AR-05 起每跳计费+附件下载同池后——红队探针实证出厂预设（pageSize=20/maxPages=10 → 配额 15）第 5 个附件即熔断、页 2 条目静默少收（matched 10≠20）；且只调 maxCalls 不够——默认 maxTokens 50000 给出 500 跳硬顶。②Ctrl-C/关窗杀 workbench 后 detached 爬虫成孤儿继续采集（探针实证 ppid=1 独立 pgid）。
 
 ## Solution
 
-五个独立小修（每件独立验收与回滚单元，红队 KA-5 批次纪律）：F6 一行路径修复 + A18 断言补强；cninfo/api limitations 参数 + 商品任务 manifest 卡渲染；A19 判类与扩展名收口；RSS 标题附 Feed 数；N4 超时回调 canceled 检查。产品代码合计 <60 行。
+①预算分池：分页/下载各自配额、覆盖每页 1+5 跳 worst-case、显式关闭无意义的 token/cost 计费——熔断只在真实失控时发生。②server 信号处理（SIGINT/SIGTERM/SIGHUP）：terminate 活动子进程组 → flush 队列 → 退出；被关停任务保持 running 态落盘，下次启动按既有重启恢复语义标中断失败。
 
 ## User Stories
 
-1. 作为运营人员，我想跑 mock 商品样板后看到真实的品牌中位数分析（而非恒空），以便样板演示可信。
-2. 作为运营人员，我想在工作台回看商品任务与 RSS 任务的快照原文和证据，以便核验数据。
-3. 作为数据消费者，我想让四类正式任务的详情页都有限制声明（财报=PDF 原件、API=按路径提取等），以便知道数据边界。
-4. 作为运营人员，我想让取消的任务不被「任务超时」红条误导，取消语义干净。
-5. 作为运营人员，我想在任务列表里凭标题区分多条 RSS 任务。
+1. 作为运营人员，我想跑多附件接口采集时所有附件都下载成功（而不是第 5 个起熔断），以便任务产出完整。
+2. 作为运营人员，我想让预算熔断只在真实失控（超大任务）时发生，而不是被默认 token 上限误伤。
+3. 作为运营人员，我想按 Ctrl+C 或关窗口退出工作台时爬虫子进程被一并收割，不留孤儿继续占资源。
+4. 作为运维，我想让被服务关停中断的任务在下次启动时如实标「中断失败」，而不是伪装成正常完成或用户取消。
 
 ## Implementation Decisions
 
-1. **F6（KA-1）**：`firecrawl-scraper/src/engine.ts` 的 SnapshotStorage 构造改传 `path.join(outDir, 'snapshots')`（对齐 `--analyze`、workbench evidence 路由、manifest `snapshotsDir` 声明三消费端；rss-collector 同款先例）。测试更新面恰两处：`engine.test.ts`（快照目录断言改 `snapshots/` 下）、`product-smoke-e2e.test.ts`（断言 `snapshots/` 布局并移除 `TODO(F6)`）。pipeline/manifest/storage 包级测试零改动。
-2. **A18 补强（KA-1/V2）**：product-smoke 增分析内容断言——`analysis_summary.json` `totalRecords === 9`、brandSummaries 含三品牌（红队模拟探针已证修复后真实产出：4 URL 得 totalRecords 4 + 正确中位数）。
-3. **验收观测点修正（KA-2）**：修复后 `/tasks/:id/snapshot-content` 从 404→200 有内容、`/tasks/:id/evidence` 从 200 空数组→200 有内容——两者口径不同，验收断言以 product-smoke 的落盘产物为准，不新增路由级用例。
-4. **limitations 数据闭环**：cninfo engine manifest 构造传 `['公告原件为 PDF 快照落盘，不做文本抽取与结构化', '披露内容以巨潮资讯网原文为准，不做二次加工']`；api-connector 传 `['响应内容按配置路径规则提取，字段缺失不推断不补全', '附件按原文件字节落盘，内容真实性与源站一致']`；各附一条既有 manifest 相关测试的断言扩展（不新建文件）。
-5. **商品任务 manifest 卡（UI 增量，UI-GATE 前不得先行——KA-5）**：TaskDetail 对 product-price 且 succeeded 的任务在 ProductPriceDashboard 之后渲染 UniversalManifestCard；渲染条件从「非 product-price 且 succeeded」改为「succeeded（全部类目）」；partial/failed 仍不渲染。细节经 UI-GATE 增量补记确认。
-6. **A19 判类（KA-4）**：`adoption.test.ts` 无点 token 分支——纯数字/`0x` 十六进制先经 `ipLiteralAllowed` 判类（字母 token 维持忽略）；红队 V4 探针已证 `134744072`/`0x62626262` 翻红、`2130706433` 存量保持绿。
-7. **A19 扩展名（KA-4 条件 3）**：白名单补 `.yaml/.yml/.csv/.snap`，并新增一个被扫描的 `.yaml` fixture（内容含 allowlist 主机的 http URL）证明扩展生效——否则该子项剔除（红队 kill 判据）。
-8. **RSS 标题（KA-3）**：`summarizeTask` rss 分支改 `RSS 采集 · ${name}（${urls.length} Feed）`；同步更新恰三处断言：`api.test.ts:295`、`task-params.test.ts:237-238`、`rss-e2e.test.ts:134`（红队全仓清点，无第四处）。
-9. **N4（红队实证污染链）**：runner 超时回调首行 `if (canceled) return;`；新增用例「取消后立即触发超时不输出任务超时行」（与 `runner.test.ts` 既有超时测试同构）。
+### N2 预算分池（红队条件 1+2）
+
+1. **双 BudgetGate 分池**（BudgetGate 现有 API 足够，不改 data-governance）：
+   - **分页池**：`maxCalls = maxPages × (1 + MAX_REDIRECT_HOPS)`（每页最多 1+5 跳 worst-case，探针 B2 实证 `+5` 常数不够）；
+   - **下载池**：`maxCalls = pageSize × maxPages × (1 + MAX_REDIRECT_HOPS)`（条目数上限 × 每条下载跳上限；fail-closed 熔断顶而非资源分配）。
+2. **token/cost 显式关闭**（条件 1）：两池均 `maxTokens: undefined, maxCostUsd: undefined`（api-connector 无 LLM，token 估计无意义；探针 C 实证默认值造成 500 跳硬顶）。>500 总跳用例佐证不出现 `TOKENS_EXCEEDED`。
+3. **guardedFetch 每跳计费语义保留**（WC-AR-05 G4），调用方按场景传入对应池：分页请求→分页池；附件下载→下载池。重定向跳计入所属请求的池。
+4. **matched 静默少收随公式修复自然消失**（页 2 分页不再熔断 → 条目正常计数）；补一条断言钉死（探针 A 的 matched=10≠20 反例）。
+
+### 终态语义（红队条件 3）
+
+5. **分页池熔断 → `queryError` + failed 计入，终态走既有 classifyDone**（有产出 partial、无产出 failed）。论证以「如实呈现」为标准（**不引用「恢复旧语义」**——红队 KA2 实证旧 error→failed 路径是不可达死代码）：预算熔断是己方策略性停止，如实计入采集失败；**与 rss-collector 先例显式对齐**（其预算熔断同归 queryError，两引擎分类不分叉）。`[BudgetGate]` reason 前缀保持可识别。下载池熔断 → 附件 `file failed`（现状不变）。
+
+### Ctrl-C 关停（红队条件 4+5）
+
+6. **信号集 = SIGINT + SIGTERM + SIGHUP**（SIGHUP 覆盖启动器文档化的「关闭本窗口」退出路径，否则该路径仍泄漏孤儿——KA4）；**双击强退**：第二信号立即 `process.exit(130)`，不再等待 flush。
+7. **shutdown 机制唯一化（三选一裁决）**：走 **terminate 而非 queue.cancel**——仅终止活动任务子进程组（复用 runner terminate/cancel 句柄），**不改写任务状态**，`await queue.close()` flush 日志/状态链后退出。被关停任务磁盘态保持 `running` → **下次启动按既有重启恢复语义标「服务重启导致任务中断」（failed）**——与提案决策 2 的可观测结果句一致；canceled 语义保留给「用户取消单个任务」，关停中断不冒充。需要 `TaskQueue` 增一个不改写状态的中断方法（如 `interruptActive()`，调用 `active.handle.cancel()`），纯加法。
+8. **测试形态（条件 6）**：导出可注入依赖的 `installSignalHandlers({ queue, exit })` 例程（server/shutdown.ts），单测落 queue.test 既有基建（Runner fake + tmp dataRoot）；三个信号参数化各一断言 + 双击强退 + 「下次启动标中断失败」两阶段断言。**不做子进程级 e2e**（dataRoot 硬编码无 seam，红队 KA5 kill 判据）。
 
 ## Testing Decisions
 
-- F6/A18：engine.test 既有用例断言更新 + product-smoke 既有用例断言扩展（+分析断言）；修复验证含开发期探针（注入 `https://134744072/x` → A19 红、移除 → 绿，记入证据）。
-- limitations：cninfo/api 各一条既有测试断言扩展（manifest.limitations 非空且含关键短语）。
-- N4：runner.test 新增 1 用例。
-- 新增测试净计数：约 +3（limitations×2 + N4×1），其余为断言扩展；基线 204 零回退。
-- 全量门禁：`pnpm test && pnpm typecheck && pnpm build`；timing 敏感用例偶发 flake 时复跑一次确认（红队 V3 观测）。
+- N2：recheck 场景（maxPages=2、单页 10 附件、注入 fetchFn）全部下载成功 + matched=20；redirect 密集分页用例（探针 B2 场景）不熔断；>500 总跳用例无 TOKENS_EXCEEDED；分页熔断事件分类断言（queryError，终态 classifyDone）。
+- Ctrl-C：installSignalHandlers 单测（三信号/双击/两阶段重启语义）。
+- 新增测试净计数约 +6（N2×4 + shutdown×2）；基线 205 零回退；全量门禁 `pnpm test && pnpm typecheck && pnpm build`；timing 敏感用例偶发 flake 复跑一次（红队 V3 政策）。
 
 ## Out of Scope
 
-N2（预算定容，需设计决策另批）、N5/N6、TaskList view-desc 措辞、Ctrl-C 孤儿爬虫清理、商品面板 partial 渲染、WC-AR-03。
+N5/N6 其余、FA1/FA2、view-desc、firecrawl budget-gate 副本去重（N5 邻域）、AgentReachBridge、server dataRoot env 覆盖 seam（若未来要子进程 e2e 再补）。
 
 ## PRD Diff Gate（auto 模式，2026-10-16）
 
-1. limitations 四条文案钉死（提案开放问题落定）——纯增量。
-2. A19 扩展名子项的 fixture 佐证要求（红队条件 3 吸收）——增量收紧。
-3. 观测点表述修正（404 vs 200 空，红队条件 4）——事实修正。
-4. F6 测试更新面与 RSS 标题断言面由红队枚举钉死（条件 1/2）——增量细化。
-5. 商品卡渲染条件定为「succeeded 全类目」（提案留 UI-GATE 的预裁，最终以 UI-GATE 为准）——增量。
+1. 分池公式与 token/cost 关闭（条件 1+2 落定，开放问题 1 裁决=分池，理由：BudgetGate 现有 API 免改治理包）——增量。
+2. 终态语义=queryError+classifyDone（条件 3，开放问题 2 裁决；与 rss 显式对齐）——增量。
+3. 信号集 +SIGHUP（条件 4，开放问题 4 落定）——增量。
+4. shutdown 三选一=terminate 保 running 态（条件 5，开放问题落定；**与提案决策 2 可观测结果句一致**：下次启动 running→中断失败）——增量。
+5. 测试形态=例程单测（条件 6，开放问题落定）——增量。
+6. matched 少收随公式修复 + 断言钉死（探针新发现的附加验收）——增量。
 
 无变更/丢弃提案已定决策；无需升级。
 
 ## GRILL 决议附录
 
-### Round 1（作者盲审子代理 6 包，主代理核验后全采纳，2026-10-16）
+### Round 1（作者盲审子代理 5 包，主代理核验后全采纳，2026-10-16）
 
-- **G1（Q1）F6 测试改法**：engine.test 显式两层定位——顶层 `readdir(tmpDir)` 恰为 `['snapshots']`（锁目录名=锁契约），再进 `snapshots/` 找 `snap_*` 读 metadata；product-smoke 双层断言（顶层无 `snap_*` 反向 + `snapshots/` 下恰 9 个）；`/files` 列表前缀变化不加路由级断言（walkFiles 递归天然承载，cninfo 嵌套先例 files.test.ts:56 在案）。
-- **G2（Q2）limitations 断言落点重述**（PRD 决策 4 前提修正：两包不存在「manifest 相关测试」）：cninfo → `json-mode.test.ts:130`「--json 正式运行…」尾部扩展（非 dry-run 必落 manifest，engine.ts:314 守卫）；api → `engine.test.ts:39`「正常分页与附件下载」尾部扩展（3 文件落盘触发 manifest）；深度=非空 + `.some(includes(关键短语))`（cninfo 查「不做文本抽取」，api 查「不推断」）——沿 rss-collector/firecrawl 既有深度先例，不逐字 deepEqual。
-- **G3（Q3）N4 用例确定性时序**：复用既有 `fixtures/stubborn-crawler.mjs`（忽略 SIGTERM、先注册后打就绪行）+ `{ killGraceMs: 2500, timeoutMs: 1500 }`：等 ready → cancel → await done；断言 `exit.signal === 'SIGKILL'`（「到点时未退出」的确定性代理）+ 无「任务超时」行且无 error 类型行。两条不变式：cancel 早于超时（.mjs 启动 ≪1.5s）、SIGKILL 晚于超时（ready+2.5s > 1.5s）。**陷阱记录：禁用尊重 SIGTERM 的 fixture（会空转）**。
-- **G4（Q4）A19 fixture 佐证**：`apps/workbench/test/fixtures/a19-scan-fixture.yaml`（两行：注释说明用途 + `target: https://example.com/report`）；A19 测试内补显式包含断言 `testFiles.some(f => f.endsWith('fixtures/a19-scan-fixture.yaml'))`——否则按红队 kill 判据扩展名子项剔除。
-- **G5（Q5）RSS 标题断言值预计算**：全角括号计数有 ≥3 处 UI 先例（TaskList 预览计数/TaskDetail 已取消附注/RssPicker hint），「`·`=字段分隔、括号=附注」两体系各归其位。三个新断言值：api.test.ts:295 → `RSS 采集 · 公开资讯（2 Feed）`；task-params.test.ts:237-238 → `RSS 采集 · 行业资讯（1 Feed）`；rss-e2e.test.ts:134 → `RSS 采集 · 公开资讯 e2e（2 Feed）`。
-- **G6（Q6）UI 增量等价性证明**（供 UI-GATE 补记引用）：`cat !== 'product-price' && status === 'succeeded'` → `status === 'succeeded'` 对非 product 类目严格等价（partial 等非 succeeded 终态改前改后均不渲染，status 枚举六值全覆盖）；唯一增量 = product-price ∧ succeeded 在 ProductPriceDashboard 后渲染卡片；`analyze:false`/无 manifest 的商品任务由卡片 404 静默兜底（`if (!manifest) return null`）不会空壳。
+- **G1（Q1）interrupting 标志封双竞态（阻塞项）**：`TaskQueue` 加私有 `interrupting` 标志，`interruptActive()` 同步置位——`onProcessDone` 在标志下跳过状态改写（running 原样落盘）、`pump()` 在标志下拒绝再调度（关停瞬间不拉起新任务造孤儿）；用户 `cancel(id)` 路径不动。这是对 PRD 决策 7「不改写状态」承诺的必要守卫——否则 done 落定后 onProcessDone 会把 running 静默改写为 failed「采集进程异常退出」。
+- **G2（Q2）关停等待子进程落定**：`interruptActive()` 内 `await handle.done` 再返回（SIGTERM→5s SIGKILL 兜底保证有界；done 落定后 `close()` 才能刷尾部日志行——runner close 时冲刷残留 buf/stderr）；顽固子进程由既有 SIGKILL 升级收割，双击 `exit(130)` 是逃生门。不做自设超时（与既有宽限重复），不做 fire-and-forget（孤儿只修一半）。
+- **G3（Q3）例程单测形态**：`installSignalHandlers({ queue, exit })` 真 `process.on` 注册三信号 + 返回 uninstall（防测试污染）；测试用 `process.emit(sig)` 发假信号（覆盖真实注册面——SIGHUP 漏注册可被测出）；双击强退 flag 在例程闭包内同步置位（queue 不感知信号）。注入面维持 `{ queue, exit }` 不扩。
+- **G4（Q4）两阶段断言构造**：沿用 fakeRunner（cancel→resolveDone，生产忠实）+ G1 守卫——waitFor done 落定后读 raw `tasks.json` 断言 `status === 'running'`，再 `q2.init()` 断言 `failed`／`服务重启导致任务中断`（与既有重启用例拼完整两阶段）；断言对象是**磁盘 raw**（PRD 承诺对象）而非内存态。
+- **G5（Q5）N2 熔断断言的确定性触发**：`RunApiConnectorOptions` 加可选预算注入 `budgets?: { pagination?: BudgetCounter; download?: BudgetCounter }`（缺省按公式建双池；与 fetchFn 注入先例同形）——测试传 maxCalls=1 小池确定性驱动熔断，断言 queryError + `[BudgetGate]` reason 前缀 + summary.failed 全链路。新公式下生产路径分页熔断不可达（worst-case 恰等配额），注入是唯一真实触发器。classifyDone 归宿由 queue.test 既有「失败分级」用例脚本补一行覆盖，不另起引擎用例。
 
-### Round 2（主代理，2026-10-16）
+### Round 2（主代理 2 包，2026-10-16）
 
-扫描全部已定项后无新增开放问题（UI 增量的原型呈现方式属 UI-GATE 自身流程决策）。
+- **G6 退出码**：优雅关停（信号处理完整走完）→ `process.exit(0)`；双击强退 → `exit(130)`（128+SIGINT 惯例，对 TERM/HUP 同值统一）。
+- **G7 budgets 注入缺省语义**：`budgets` 整体缺省或某池缺省时按 PRD 公式建池（分页 `maxPages_eff × 6`、下载 `pageSize_eff × maxPages_eff × 6`，有效值取 clamp 后）；显式传入的池完全替换该场景池（测试用小池语义）。
 
-**GRILL 收敛**：2 轮收敛。
+**GRILL 收敛**：Round 2 后无新增开放问题，2 轮收敛。

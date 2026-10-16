@@ -1,94 +1,89 @@
-# 红队评审：递延项收敛批（F6 领衔）— 五件递延项一次收敛
+# Red-Team: 执行治理收尾批（N2 api-connector 预算定容 + Ctrl-C 孤儿爬虫关停清理）
 
 - **日期**：2026-10-16
-- **提案**：`.flow/proposal.md`（递延项收敛批，固化于同日）
-- **评审对象仓库**：`gadfly-hbo/web-crawler`，main @ `9e86c45`（工作区仅 `.flow/proposal.md` 脏文件，与本评审只读范围一致）
-- **评审立场**：对抗性红队，全新上下文，与提案作者无关。方法：先提取全部承重主张并 steelman，再用仓库代码与可执行探针逐条攻击；排名 = 影响 × 出错可能性 × 验证成本。
-- **技能**：`~/.agents/skills/strategy-red-team/SKILL.md`
+- **提案**：`/Users/huangbo/Dev/Projects/web-crawler/.flow/proposal.md`（完整阅读）
+- **评审对象仓库**：main @ `5b762d4`，只读评审 + `/tmp` 探针实证（探针目录 `/tmp/n2probe/`，评审后无残留进程）
+- **方法**：按 `strategy-red-team` 技能——提取承重 claim → steelman → 攻击，按 影响 × 可能性 × 验证成本 排名；所有 N2/Ctrl-C 关键断言均以仓库代码与可执行探针实证。
 
-## 结论先行
+## 基线验证（全部实跑）
 
-**Verdict：GO-WITH-CONDITIONS。**
+| 项 | 结果 |
+|---|---|
+| `pnpm test` 全量 | **205/205 绿**（data-governance 10 + firecrawl 27 + api-connector 20 + rss 32 + cninfo 14 + workbench 102），与提案基线一致 |
+| N2 recheck 场景现状（探针 A：maxPages=2、单页 10 附件、注入 fetchFn） | **6/20 下载成功**；页 1 末 4 附件 `file failed`（reason=`[BudgetGate] CALLS_EXCEEDED`）、页 2 分页 `queryError`（同 reason）、`done` 事件、reducer 复算终态 **partial**；无 `error` 事件；`matched=10`（页 2 的 10 条**从未被计数**——静默少收） |
+| 纯分页重定向密集（探针 B2：maxPages=3、每页 1+5 跳、dryRun 零下载） | 页 1 耗 6 跳后页 2 第 3 跳熔断 → `queryError` → partial。**即公式 `maxPages+5` 在每跳计费下连自己的原场景（纯分页）都不够** |
+| 默认 token 上限陷阱（探针 C） | `new BudgetGate({ maxCalls: 1000 })` 在**第 501 跳**以 `TOKENS_EXCEEDED`（49900+100 > 50000）熔断；显式 `maxTokens: undefined, maxCostUsd: undefined` 后 600 跳全过 |
+| detached 孤儿实证（探针 D，macOS） | 父进程退出后子进程存活，**ppid=1、自成 pgid**（setsid 会话）；`kill -TERM -pgid` 收割成功——runner 既有 `terminate` 机制直接可用 |
+| 真实启动链信号传递（探针 E/E2） | 链为 `pnpm → tsx CLI → node 孙进程` 三层；对该孙进程或对 pnpm 顶层发 SIGINT，**整链 ~14ms 全退**——无信号吞噬，但 e2e 断言须定位**孙进程** pid |
+| 「语义漂移」历史核验（git `15950a3` vs 当前） | 旧引擎 `checkAndReserve` 确在内层 try 之外（熔断将 → `error` 事件 + rethrow）——**但旧引擎下载完全不进预算池，`callsMade ≤ maxPages < maxCalls`，该路径永不可达，是死代码**（详见 KA2） |
 
-五件事的承重主张全部经仓库实证成立，无任何 kill 判据被现有证据满足（故不 KILL）。F6 的核心事实链——engine 写顶层、三消费端读 `snapshots/`、修复后分析真实非空——已用 CLI 探针双向验证（修复前 `totalRecords: 0`；模拟修复后 `totalRecords: 4`、三品牌汇总带正确中位数）。发现的问题全部是**精度与完备性缺口**（表述失真、测试更新面未枚举、白名单补齐不可验证），以 5 条附带条件约束即可放行。
+## Top Kill-Assumptions（按 影响 × 可能性 × 验证成本 排序）
 
-## 验证记录（本评审实际执行的证据）
+### 1. 「N2 修复 = 重新定容 maxCalls 公式」——只调 maxCalls 修不完，>500 跳仍熔断
 
-| # | 验证项 | 结果 |
-|---|--------|---|
-| V1 | CLI 探针（修复前现状）：`node --import tsx src/main.ts --mock --analyze -o /tmp/fc-probe` | 快照落顶层 `snap_*`；`[ANALYSIS] 样本总数: 0`；`analysis_summary.json` `totalRecords: 0`、`brandSummaries: []` —— **F6 病灶实锤** |
-| V2 | 模拟修复后：快照挪入 `snapshots/` 再跑 `runProductAnalysisPipeline`（4 个 brand-a/b/c URL） | `totalRecords: 4, validRecords: 4`；品牌汇总 `[A: n=2 median 249, B: 159, C: 239]`（中位数逐个核对正确）—— **A18 补强前提成立** |
-| V3 | 全量 `pnpm test` | 10+27+20+32+14+101 = **204**，与提案基线一致；workbench 首轮 100/101（1 个未识别间歇失败，输出被过滤未定位），后续 4 轮 101/101 全绿 |
-| V4 | A19 判类探针（tsx 引入 `data-governance/egress` 模拟修复后 hostAllowed） | `134744072`/`0x62626262` → 拒绝（红）；存量回环 fixture `2130706433`/`0x7f000001` → 仍放行（绿）—— **recheck 判据可落地且不破存量** |
+- **Claim**：决策 1/开放问题 1 的两个候选（分池 / 单池重定容）都是 **maxCalls 公式**问题。
+- **Steelman**：recheck 判据场景（2 页 + 20 附件 = 22 跳）远小于 500，公式修好后 recheck 确实会绿；提案也明确预留了公式裁决空间，没有把公式写死。
+- **Fails if**：`BudgetGate` 构造只传 `maxCalls` 时继承默认 `maxTokens: 50000`（每跳记 100 token → **500 跳硬顶**）与 `maxCostUsd: 0.20`（每跳 0.0002 → 1000 跳硬顶）。引擎上限场景 maxPages=200 × pageSize（校验仅要求 ≥1、无上界）→ 合法任务轻松 >500 跳 → 修复后大任务仍以 `TOKENS_EXCEEDED` 熔断，只是换了个熔断面孔。**本仓已踩过并解决过这个坑**：`crawlers/rss-collector/src/collector.ts` 用 `checkAndReserve(0, 0)` + `recordUsage({})` 中和默认估计；探针 C 证明 `undefined` 显式关闭亦可。
+- **Kill criterion**：PRD 公式若只出现 `maxCalls` 而不处置 `maxTokens`/`maxCostUsd`（中和或按跳数放大），则 N2 在 maxPages=2 的验收内绿、在大任务上依旧熔断——修复不完整，PRD 打回补这一项。
+- **Cheapest test**：引擎测试加一个 >500 总跳的重定向/多附件用例（现有 mock fetchFn 基建零成本），断言不出现 `TOKENS_EXCEEDED`。
 
-## Top Kill-Assumptions（按影响 × 可能性 × 验证成本排名）
+### 2. 「分页期熔断语义漂移需要裁决恢复」——漂移为真，但「原先语义」是从未执行过的死代码，且分页池公式有同源缺陷
 
-### KA-1（第 1 名）：F6「改 engine 一处路径即闭环，受影响测试面小且已知」
+- **Claim**：决策 1 引 WC-AR-05 红队记录：「分页熔断原先 try 外抛出 → error 事件 + 整体 failed；现在被捕获为 queryError → 降为 partial——何为正确语义须裁决」。
+- **Steelman**：漂移断言在**结构上完全属实**——核验了 `15950a3`（checkAndReserve 在内层 try 外）与当前代码（`guardedFetch` 在 try 内）；提案把它列为须裁决的开放问题而非预设答案，姿态正确。
+- **Fails if**：裁决以「恢复原先语义」为论据。旧引擎**下载不进预算池**，`callsMade ≤ maxPages` 恒成立 → 旧 `error→failed` 路径**不可达、从未在生产执行过**——这是一次全新语义设计，不存在回归参照。且仓内已有直接先例：rss-collector 把预算熔断归为 `queryError` + `failed++` + 继续循环 → 终态走 partial/failed——与 api-connector **当前**行为一致。若裁决结果与 rss 相反（error→failed），两个引擎对同类事件的分类将分叉。
+- **Kill criterion**：若把「回到 error→failed」写成「恢复历史语义」→ 论据不成立，须以「如实呈现」标准重新论证；若保留 queryError，须补「预算熔断 reason 可被识别」的说明或接受不可区分。
+- **Cheapest test**：redirect 密集分页用例断言事件类型与终态——顺带钉死：**分页池若保留「+常数」形态公式，worst-case 需要 `maxPages × (1 + MAX_REDIRECT_HOPS)` 配额**（B2 已证 `+5` 不够）。
 
-- **Claim**：`crawlers/firecrawl-scraper/src/engine.ts:19` `new SnapshotStorage(options.outDir)` 是唯一错配写入点；改传 `path.join(outDir, 'snapshots')` 后 `--analyze`、workbench evidence 路由、manifest 声明三消费端自然对齐。
-- **Steelman**：三消费端读 `snapshots/` 有代码实据——`src/main.ts:199`（`--analyze` 读 `outDir/snapshots`）、`apps/workbench/server/routes/evidence.ts:133`（snapshot-content 硬编码 `path.join(task.outDir, 'snapshots', snapshotId)`）、`src/pipeline.ts:177`（manifest 声明 `snapshotsDir: 'snapshots/'`）；且 `crawlers/rss-collector/src/collector.ts:192` 已用完全相同的 `path.join(outDir, 'snapshots')` 构造，仓库内先例一致。V1/V2 探针双向证明修复即闭环。
-- **Fails if**：存在提案未列出的顶层 `snap_*` 消费方或第三处断言顶层布局的测试，修复批静默漏改 → 门禁红或行为回退。
-- **Evidence（已取）**：全仓清点完成。断言顶层布局的测试**恰好两处**：`crawlers/firecrawl-scraper/test/engine.test.ts:72-77`（`readdir(tmpDir)` 直接找快照目录，修复后第一个目录是 `snapshots` 而非快照，`metadata.json` 读取 ENOENT 必挂）与 `apps/workbench/test/product-smoke-e2e.test.ts:83-90`（`TODO(F6)` 在案）。提案预判「pipeline 测试自传 snapshotsDir 不受影响」属实（`pipeline.test.ts:13,17,23` 自建 `snapshots` 目录作 engine outDir，自洽闭环）；`storage.test.ts` 直用 SnapshotStorage 不经 engine，不受影响；`manifest.test.ts:110-115` 只断言合成 manifest 的字面声明、从不与磁盘实盘比对——**没有任何测试固化「声明与实际不符」的现状**。workbench `files` 路由 `walkFiles` 递归列目录（`routes/files.ts:17-38`），单文件下载走通配路由支持含 `/` 相对路径（:59-77），且 `files.test.ts:56` 已断言 cninfo 嵌套路径形态——嵌套展示形态无回归风险；`evidence-api.test.ts:71,178,199` 手造 fixture 本就按 `outDir/snapshots/snap_*` 布局。启动脚本、web 前端、data-governance 测试均无顶层 `snap_*` 直接引用；`data/firecrawl-scraper/e2e-m3-pkg` 固件无任何代码引用。
-- **Kill criterion**：若实现中发现第三处断言顶层布局且属跨包语义（非简单路径改写），F6 从本批单拆先行。
-- **Cheapest test**：已执行（V1/V2 探针，成本约 1 分钟）。残留验证成本为零。
-- **裁决**：主张成立，风险基本退役；「逐条核实」由本评审代为完成，结果支持提案。
+### 3. 决策 2 内部矛盾：「复用 terminate/cancel 路径」与「下次启动按 running→中断失败处理」指向三个不同的可观测终态
 
-### KA-2（第 2 名）：提案「/evidence 与 /snapshot-content 现在 404」的事实精度
+- **Claim**：决策 2 同时说「终止活动任务子进程组（复用既有 terminate/cancel 路径）」和「被关停任务在下次启动时按既有重启恢复语义处理（running → 中断失败）」。
+- **Steelman**：两条都是既有代码路径（`queue.cancel()`：`queue.ts:141-148`；`handle.terminate`：`runner.ts:80-88`；重启恢复：`queue.ts:56-62`），「不新增状态」约束真实成立。
+- **Fails if**：三条路径产出**三种不同终态**——(a) `queue.cancel(id)`：状态 `canceled` 并落盘 → 下次启动看到 canceled；(b) 仅 `handle.cancel()` 后等 done：`onProcessDone` 把 running 写成 `failed`（"采集进程异常退出"）；(c) 不等 flush 就退出：磁盘残留 running → 下次启动 `failed`（"服务重启导致任务中断"）。提案文字同时暗示 (a) 和 (c)。
+- **Kill criterion**：PRD 不唯一化该选择并写明对应测试断言 → 打回一句话裁决即可。
+- **Cheapest test**：GRILL 一行裁决；测试断言终态字串。
 
-- **Claim**（提案开放问题原文）：修复后 web-scraper 任务的两个 evidence 视图「真实开始可用（现在 404）」。
-- **Steelman**：方向正确——修复前这两条链路确实拿不到真实数据。
-- **攻击**：表述失真。`/tasks/:id/snapshot-content` 今天确实 404（`evidence.ts:135-137`，因 snapshots/ 目录不存在）；但 `/tasks/:id/evidence` 今天**不是 404**，而是 200 + 空数组——pipeline 恒写空 `evidences.jsonl` 与空表 `evidence.sqlite`（`pipeline.ts:108-115,44-45`），路由降级返回 `{evidences: []}`（`evidence.ts:117`）。修复后前者从 404→200 有内容，后者从 200 空→200 有内容，验收观测点不同。
-- **Fails if**：PRD/验收把「404→可用」当统一口径，用 /evidence 做回归观测会误判「本来就通」。
-- **Kill criterion**：无（表述修正，不动摇方案）。
-- **Cheapest test**：已完成（路由代码 + V1 探针产物核对）。
+### 4. 「SIGINT/SIGTERM 两个信号集」漏了启动器自己文档化的另一半退出路径（SIGHUP）
 
-### KA-3（第 3 名）：④ RSS 标题「旧任务无影响」成立，但新格式的测试更新面未被枚举
+- **Claim**：决策 2/开放问题 4 只列 SIGINT/SIGTERM。
+- **Steelman**：Ctrl-C 与 `kill`（SIGTERM）确实是两大主路径，收窄信号集是克制的设计。
+- **Fails if**：`启动采集工作台.command` 头部注释明写退出方式是「**关闭本窗口**或按 Ctrl+C」。关闭 Terminal 窗口向前台进程组发 **SIGHUP**；server 无 SIGHUP handler → 默认终止 → 修复后的清理代码不执行 → 孤儿依旧。而 detached 爬虫自成会话**不收终端 SIGHUP**——只有 server handler 能杀它。修复若不含 SIGHUP，启动器自述的退出路径一半仍泄漏孤儿。
+- **Kill criterion**：信号集若定为仅 SIGINT/SIGTERM，须显式记录「关窗退出仍泄漏孤儿」为已知限制；否则补 SIGHUP 是一行成本。
+- **Cheapest test**：shutdown 单测对三个信号各断言一次（同一例程，参数化）。
 
-- **Claim**：`summarizeTask` rss 分支附 Feed 数对旧任务无影响。
-- **Steelman**：结构上成立——标题在创建时固化为 `TaskRecord.title`（`server/queue.ts:102`），不回填、不重算，旧任务零迁移成本。`RssTaskParams.urls: string[]` 在手，Feed 数 1–5，格式方向已获 UI 合同预授权（`.flow/ui-contract.md` F2 明文「建议后续批在 rss 分支附 Feed 数或首 host」）。
-- **Fails if**：改 `shared/task-params.ts:108-110` 后漏改既有断言 → 门禁红。实查**恰好三处**将随格式变化而挂：`apps/workbench/test/api.test.ts:295`、`apps/workbench/test/task-params.test.ts:237-238`、`apps/workbench/test/rss-e2e.test.ts:134`（均为 `RSS 采集 · <名>` 全等断言）。提案开放问题只提「旧任务显示兼容」，未枚举测试更新面。
-- **Kill criterion**：若实现中发现第 4 处断言，说明格式选择与既有快照耦合过预期，回 GRILL 重定格式。
-- **Cheapest test**：改后单跑 `pnpm --filter workbench test`（约 4 秒）。
+### 5. 「Ctrl-C 测试形态可选子进程级 e2e」——真实 server 子进程 e2e 缺隔离基建
 
-### KA-4（第 4 名）：③ A19 recheck 判据可落地，但扩展名补齐子项当前不可验证
-
-- **Claim**：无点纯数字/十六进制 token 先判类再放行；`134744072`/`0x62626262` 公网编码应拒绝；扩展名白名单补齐。
-- **Steelman + 攻击**：
-  - 判类部分**实锤可落地**：绕过点在 `apps/workbench/test/adoption.test.ts:110-113`——无点 token 无条件 `return true`；V4 探针证明接入 `ipLiteralAllowed` 后两个公网编码正确翻红、存量回环 fixture（`2130706433`）保持绿。recheck 判据「注入 `https://134744072/x` → A19 红（当前绿）」与代码事实完全吻合。
-  - 扩展名部分**当前是零覆盖差**：`adoption.test.ts:124` 白名单无 `.yaml/.yml/.csv/.snap`，且实查全仓 test 目录**现存此类文件数为 0**。纯前向加固——若不随批附一个被扫描的新扩展名 fixture（内含 allowlist 主机的 http URL），新增白名单条目是没有任何测试能证明生效的死代码，与「以可验证结果定义完成」相悖。
-- **Fails if**：扩展名清单落地后无 fixture 佐证 → 该子项声称完成但不可验证。
-- **Kill criterion**：扩展名补齐若无法为新增条目各配（或至少配一个代表性）被扫描 fixture，则该子项从本批剔除、仅做判类修复。
-- **Cheapest test**：在任一 test 目录放一个 `.yaml` fixture（含 `https://example.com/x`），跑 adoption.test.ts 确认文件被计入扫描基数（`testFiles.length` 变化）。
-
-### KA-5（第 5 名）：五件事一批 vs 最小变更原则
-
-- **Claim**：五件递延项一批收敛是合理的批次切分。
-- **Steelman**：五件全部是前批评审已裁决的 recheck 判据，非新增范围；产品代码合计极小（engine 1 行、两个爬虫 manifest 各 1 参数、task-params 1 行、runner 1 行、adoption.test 约 3 行），估算 <60 行 diff；F6 有显式边界声明。
-- **攻击**：F6 是唯一有跨包影响面的项，也是最高优先项；其余四件虽小但分属 4 个包。若任一件在实现中膨胀（典型：② 的商品卡渲染条件若从 succeeded 扩到 partial，或落点争议返工），会拖累 F6 的及时合入与回滚粒度。
-- **Fails if**：五件中任一件实现 diff 超出提案边界（最可能：TaskDetail 渲染条件在 UI-GATE 通过前被顺手改动）。
-- **Kill criterion**：tasks.md 中五件各自具备独立验收判据与回滚单元；越界即拆批（F6 + A18 可独立先行）。
-- **Cheapest test**：PRD 定稿时逐件核对 recheck 判据独立存在。
+- **Claim**：开放问题 4 把「直接对 server 入口发信号（子进程级 e2e）」列为候选。
+- **Steelman**：探针 E2 证明真实启动链信号传递可靠，e2e 技术上跑得通；仓里已有真子进程测试先例。
+- **Fails if**：三个隔离缺口——(a) `dataRoot` 硬编码自模块路径（`server/index.ts:13-15`），无 env 覆盖 → e2e 将读写**真实** `data/workbench/tasks.json`；(b) 制造「活动任务」需要长任务，而 server 入口无 fixture 注入 seam；(c) 真实链中 server 是孙进程，断言须先定位孙 pid。对照：导出 shutdown 例程单测完全落在既有基建上（queue.test 的 Runner fake + tmp dataRoot 模式）。
+- **Kill criterion**：若选子进程 e2e 而不先加 dataRoot/任务注入 seam → 不可行或污染真实数据，应降级为例程单测。
+- **Cheapest test**：GRILL 钉形态为例程单测（信号处理收敛为可注入依赖的 `installSignalHandlers()`），薄 e2e 可选。
 
 ## What's Well-Reasoned
 
-- **F6 的事实链与修法完全经得起攻击**：写入侧唯一（`engine.ts:19`）、三消费端代码实据齐备、rss-collector 同款先例、V1/V2 探针双向证明「现状分析恒空、修复即真实产出」。提案对 A18 补强的预期（`totalRecords > 0`、品牌汇总非空）经 4-URL 模拟成立，9-URL 冒烟样板只会更充实。
-- **② 确为纯加法**：`data-governance/src/manifest.ts` 已支持 `limitations` 可选参数（空数组落 `undefined`）；两调用点缺失实锤——`crawlers/cninfo-reports/src/engine.ts:335-354` 与 `crawlers/api-connector/src/engine.ts:422-438` 均未传；`UniversalManifestCard.tsx:139-145` 已具备 limitations 渲染块（无则不渲染）；`TaskDetail.tsx:244-246` 渲染条件与提案描述逐字一致（`cat !== 'product-price' && status === 'succeeded'`）。数据侧闭环不依赖任何 UI 改动。
-- **⑤ N4 缺陷真实且可观察**：`runner.ts:91-103` 超时回调只查 `exited` 不查 `canceled`；取消走 SIGTERM→5s 宽限→SIGKILL（:80-88），宽限窗内超时到点会发出伪「任务超时」行，经 `queue.ts:222-236` → `reducer.ts:88-97`（canceled 状态不被改写但 `task.error` 被污染）→ `TaskDetail.tsx:232` 无条件渲染红条「任务失败：任务超时」——用户取消的任务显示为超时失败。修复（回调首行 `if (canceled) return`）与用例均与 `runner.test.ts:89-100` 既有超时测试同构，直接可写。
-- **排除清单明确**：N2/N5/N6/view-desc/Ctrl-C/AgentReachBridge 均给出不做的理由与归属，无范围蔓延迹象。
-- **基线数字属实**：当前全量恰为 204（V3），「零回退」口径可执行。
+- **N2 问题陈述完全属实，且比提案说的更严重**：探针 A 精确复现 6/20；工作台内置场景预设（研报 pageSize=20/maxPages=10 → 配额 15；定制 pageSize=50/maxPages=5 → 配额 10）意味着**出厂预设**在多附件接口上第 5 个附件就开始熔断——不是边缘场景。另实测 `matched=10` 而非 20：熔断的「静默少收」比失败事件更值得如实呈现。
+- **fail-closed 约束与既有治理叙事自洽，修复机制现成**：BudgetGate 现有 API **足以支撑双实例分池，无需改 data-governance**；反而单池「运行时重定容」需要新 API（无 setMaxCalls）或池重建（丢失已记用量）——两候选中分池实现摩擦更小。
+- **Ctrl-C 孤儿问题与修复机制均实证**：现状 `index.ts:42-43` 确为裸 `process.exit(0)`；提交历史自认「Ctrl-C 后爬虫成孤儿」；探针 D 直接证明 detached 子进程父死后存活、负 pid 组杀有效。
+- **「尽力而为清理而非优雅完成」边界正确**：queue.close() 语义与提案描述一致；persist 走 tmp+rename 原子写，中断最坏丢最后一次状态写、不损坏 tasks.json。
+- **测试基建撑得起全部验收**；**批次切分合理**（两处改动零代码耦合）。
+- **提案的自我要求质量高**：公式、终态语义、信号集、测试形态全部列为开放问题——五条 KA 有四条正是对这些开放问题的可裁决输入。
 
 ## What I Couldn't Assess
 
-- **limitations 文案的「如实性」**：方向合理，但内容判断属 PRD/GRILL 职责，代码层无法证伪。
-- **商品卡落点与 partial 渲染语义**：落点（Dashboard 上/下）与「partial 是否渲染」是 UI 决策，提案显式留 UI-GATE，本评审无浏览器截图执行条件，且仓库 UI 层无组件测试基建（handoff 已如实声明）。
-- **门禁间歇失败的定位**：首轮全量 workbench 出现 1 个失败（100/101），因输出过滤未捕获用例名，后续 4 轮全绿。报告为环境观测：timing 敏感用例（cancel/超时/SSE 族）存在低概率 flake 可能，「门禁保持绿」的验收宜以复跑一次确认。
+- 关闭 Terminal 窗口的 SIGHUP 实际行为（无法从 CLI 模拟关窗；基于 `.command` 注释 + POSIX 语义 + 会话隔离推断，建议实现期手动关窗验证或直接纳入信号集）。
+- `tsx watch`（dev 脚本）下的信号语义未探。
+- 「预计附件量」的现实分布（历史任务太少，无法校准公式常数）。
+- firecrawl-scraper 自带 `budget-gate.ts` 副本与 data-governance 的重复（N5/N6 邻域，仅提示存在）。
 
-## Verdict：GO-WITH-CONDITIONS
+## Verdict: GO-WITH-CONDITIONS
 
-无 kill 判据被满足；五件事全部实证可落地。放行条件：
+条件（进入 PRD/GRILL 前必须收敛）：
 
-1. **F6 测试更新面钉死**：`engine.test.ts:72-77` 与 `product-smoke-e2e.test.ts:83-90` 两处；pipeline/manifest/storage 包级测试不动。
-2. **RSS 标题批列入 3 处既有断言更新**：`api.test.ts:295`、`task-params.test.ts:237-238`、`rss-e2e.test.ts:134`。
-3. **A19 扩展名补齐须附被扫描 fixture**（含 allowlist 主机 URL 的新扩展名文件）证明白名单生效；做不到则该子项剔除，仅做无点判类修复。
-4. **PRD 修正 404 表述**：/snapshot-content 现为 404、/evidence 现为 200 空数组，两者验收观测点不同。
-5. **批次纪律**：五件各自独立验收与回滚单元；TaskDetail 渲染条件改动在 UI-GATE 通过前不得先行；任一件越界即拆批（F6+A18 可独立先行合入）。
+1. **N2 公式必须同时处置 `maxTokens`/`maxCostUsd` 默认值**（rss 先例或显式 `undefined`），并以 >500 总跳用例佐证。
+2. **分页配额公式须覆盖每页 1+5 跳 worst-case**（`maxPages × (1+MAX_REDIRECT_HOPS)` 或采纳 rss「重定向跳不占配额」并显式记录取舍）。
+3. **终态语义裁决不得引用「恢复旧语义」**（死代码），须以「如实呈现」论证，并显式对齐或说明与 rss 先例的分歧。
+4. **Ctrl-C 信号集评估 SIGHUP**（启动器文档化的关窗退出路径），或显式记录该路径仍泄漏为已知限制。
+5. **钉死 shutdown 走 cancel 还是 terminate**（canceled / failed-异常退出 / 下次启动 running→failed 三选一）并写入测试断言。
+6. **测试形态首选导出 shutdown 例程单测**；子进程级 e2e 仅在补齐 dataRoot/任务注入 seam 后可选。
+
+**给决策者的一句话**：先在 PRD 里写下一行公式（含 token/cost 处置）、一行终态裁决、一行信号集——三个一行决策落地后，剩余实现与测试都是本仓已验证过的低摩擦路径。

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
 import { TaskQueue } from './queue.js';
 import { makeCrawlerRunner } from './runner.js';
+import { installSignalHandlers } from './shutdown.js';
 import { StockDirectory } from './stocks.js';
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,5 +40,5 @@ server.on('error', (err: NodeJS.ErrnoException) => {
   throw err;
 });
 
-process.on('SIGINT', () => process.exit(0));
-process.on('SIGTERM', () => process.exit(0));
+// 关停清理（Ctrl-C / kill / 关窗）：中断活动任务子进程组 → flush → 退出，不留孤儿爬虫
+installSignalHandlers({ queue, exit: (code) => process.exit(code) });

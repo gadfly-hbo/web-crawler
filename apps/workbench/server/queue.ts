@@ -26,6 +26,8 @@ export class TaskQueue {
   private active: { id: string; handle: RunningHandle } | null = null;
   /** 'update' (task) 状态变化；'log' (taskId, line) 原始日志行 */
   readonly events = new EventEmitter();
+  /** 关停中断进行中：suppress 状态改写与新任务调度（G1，见 interruptActive） */
+  private interrupting = false;
 
   constructor(opts: { runner: Runner; dataRoot: string }) {
     this.runner = opts.runner;
@@ -128,6 +130,18 @@ export class TaskQueue {
     return task;
   }
 
+  /**
+   * 关停中断（G1/G2）：终止活动任务子进程组并等待落定——不改写任务状态（磁盘保持 running，
+   * 下次 init 按既有重启恢复语义标「服务重启导致任务中断」），不再调度排队任务。
+   */
+  async interruptActive(): Promise<void> {
+    this.interrupting = true;
+    const active = this.active;
+    if (!active) return;
+    active.handle.cancel();
+    await Promise.resolve(active.handle.done).catch(() => {});
+  }
+
   async cancel(id: string): Promise<TaskRecord | undefined> {
     const task = this.tasks.get(id);
     if (!task) return undefined;
@@ -177,6 +191,7 @@ export class TaskQueue {
   }
 
   private pump(): void {
+    if (this.interrupting) return; // G1：关停中不再拉起新任务（避免造孤儿）
     if (this.active) return;
     const next = this.list()
       .filter((t) => t.status === 'queued')
@@ -236,6 +251,7 @@ export class TaskQueue {
   }
 
   private async onProcessDone(task: TaskRecord): Promise<void> {
+    if (this.interrupting) return; // G1：关停中断不改写任务状态——running 原样留盘，下次启动按重启语义标中断
     if (task.status === 'running') {
       // 进程结束但没有 done/error 事件：异常退出
       task.status = 'failed';

@@ -1,39 +1,35 @@
-# 提案（讨论稿固化）— 递延项收敛批（F6 领衔）
+# 提案（讨论稿固化）— 执行治理收尾批（N2 预算定容 + Ctrl-C 孤儿清理）
 
-来源：`.flow/handoff.md`（WC-AR-06，2026-10-16）「递延项（按优先级）」清单前四项 + 各批 `review-findings.md` 的 recheck 判据（WC-AR-05 N 系列、WC-AR-06 R2/F 系列）。
-用户指令："继续下一批"（采纳文档工作包 00-06 已全部完结，handoff 递延清单为下一批的既定输入）。
+来源：`.flow/handoff.md`（递延收敛批，2026-10-16）递延台账前两项 + WC-AR-05 评审 N2 recheck 判据 + WC-AR-05 GRILL Q7 记录的 Ctrl-C delta。
+用户指令："继续下一批"（台账优先级 N2 居首）。
 固化时间：2026-10-16。
 
 ## 已定决策（不可推翻，后续阶段只可细化）
 
-1. **F6 快照布局修复（最高优先）**：firecrawl-scraper engine 把快照写入 `outDir/snapshots/` 子目录（对齐全部消费端：`--analyze`、workbench evidence 路由、manifest `snapshotsDir` 声明——三者早已按 `snapshots/` 读取，仅 engine 写入侧落在顶层）。修复后：
-   - `product-smoke-e2e.test.ts` 的 `TODO(F6)` 断言更新为 `snapshots/` 布局；
-   - **A18 补强**：补分析内容断言（mock 样板 `analysis_summary.json` 的 `totalRecords > 0`、品牌汇总非空）——F6 修复后分析链路应真实产出；
-   - 既有 firecrawl 包级测试若断言顶层布局则同批更新（pipeline 测试自传 snapshotsDir 不受影响，需逐条核实）。
-2. **limitations 数据闭环**：cninfo-reports 与 api-connector 的 manifest 构造传入 `limitations`（各至少一条如实声明，具体文案在 PRD/GRILL 钉死）；TaskDetail 对商品任务也渲染 UniversalManifestCard（现仅非 product-price 且 succeeded 渲染——落点与渲染条件细节留 UI-GATE）。目标：四类正式任务的详情页限制声明展示面收敛一致。
-3. **A19 扫描器窄缺口**（评审 R2-1/F-2 recheck 判据）：无点纯数字/十六进制 token 先经 IP 判类再放行（字母 token 维持忽略，`134744072`/`0x62626262` 公网编码应拒绝）；扫描扩展名白名单补齐常见文本 fixture 类型（`.yaml/.yml/.csv/.snap` 等，具体清单留 GRILL）。
-4. **RSS 任务标题去同质**（UI 合同 F2 既定方向"后续批在 rss 分支附 Feed 数"）：`summarizeTask` rss 分支附 Feed 数（格式如「RSS 采集 · 公开 RSS 资讯采集（3 Feed）」，具体格式留 GRILL）。
-5. **N4 超时回调补 canceled 检查**（WC-AR-05 评审 recheck 判据）：runner 超时回调首行 `if (canceled) return` + 一条"取消后立即触发超时不输出任务超时行"用例。
+1. **N2 api-connector 预算定容**（WC-AR-05 评审 non-blocking，红队实证）：现状 `maxCalls = maxPages + 5`（分页时代定容），WC-AR-05 起 guardedFetch 每跳计费、附件下载也计入同一池 → 合法多附件任务约 55 次调用后剩余附件全部 `[BudgetGate] 熔断` 失败。修复要求（N2 recheck 判据）：
+   - 以 maxPages=2、单页 10 个附件跑引擎，全部附件下载成功（或上限已按「页数 + 预计附件量」重新定容）；
+   - 分页期预算熔断的事件分类与终态语义须钉死并测试（红队指出现状有语义漂移：分页熔断原先 try 外抛出 → error 事件 + 整体 failed；现在可能被捕获为 queryError → 有产出任务终态从 failed 降为 partial——何为正确语义须裁决）。
+   - 公式方案（分池 vs 单池重定容）留给红队/GRILL 裁决，但**必须维持 fail-closed**（下载调用不得无配额）。
+2. **Ctrl-C 孤儿爬虫关停清理**（WC-AR-05 GRILL Q7 记录的 delta）：现状 Ctrl-C/SIGTERM 杀 workbench server 后，已 spawn 的 detached 爬虫进程组成孤儿继续采集。修复要求：server 收到 SIGINT/SIGTERM 时——终止活动任务子进程组（复用既有 terminate/cancel 路径）→ 等待队列落盘 flush（queue.close()）→ 再退出进程；无活动任务时直接干净退出。语义边界：关停是「尽力而为的清理」而非「优雅完成」——被关停任务在下次启动时按既有重启恢复语义处理（running → 中断失败），不新增状态。
+3. **测试**：两项各有确定性用例（N2 用 recheck 场景；Ctrl-C 的可测形态——信号处理器单元级或子进程级——留 GRILL 钉死）；全量门禁 `pnpm test && pnpm typecheck && pnpm build` 保持绿，基线 205 零回退。
+4. **范围**：仅动 api-connector engine 预算逻辑与 workbench server 生命周期两处；不改事件协议形状、不改 runner 进程管理既有语义（Ctrl-C 复用 terminate）。
 
 ## 约束与边界
 
-- firecrawl-scraper 本批仅动快照目录一处（engine 构造 SnapshotStorage 的路径）+ 受影响测试；不改事件协议、不改抽取/分析逻辑。
-- cninfo/api 的 limitations 为纯加法参数（createAndSaveDeliveryManifest 已支持）。
-- 全量门禁 `pnpm test && pnpm typecheck && pnpm build` 保持绿；基线 204 零回退。
-- UI 范围声明：商品任务详情渲染 manifest 卡（含限制声明区块）为用户可见 UI 变化——按 dev-flow 走 UI-GATE（对已批准 WC-AR-06 UI 合同的增量补记）。
+- fail-closed 不动摇：任何调用（分页/下载/重定向跳）不得绕过 BudgetGate。
+- Ctrl-C 清理不得引入新的异步复杂度到热路径（信号处理器只在关停时生效）。
+- 无 UI 范围（本批跳过 UI-GATE）。
 
 ## 已拒绝/排除的替代方案
 
-- 不修 N2（api-connector 预算定容）——需要公式设计决策（分页与下载分池 or 上限重定容），另批处理。
-- 不动 N5（三处代码异味）、N6（四处覆盖缺口）——记录在案，价值低于本批项。
-- 不做 TaskList view-desc 措辞调整（UI 合同 F4：属新 PRD 需求）。
-- 不做 Ctrl-C 孤儿爬虫关停清理（WC-AR-05 GRILL Q7 遗留，涉及信号处理语义，另批）。
-- 不动 WC-AR-03 AgentReachBridge（暂缓不变）。
+- 下载调用不进 BudgetGate（违背 fail-closed 治理前提）。
+- server 关停时等待任务自然完成（Ctrl-C 语义是立即关停，不是等待）。
+- N5/N6 其余项、FA1/FA2、view-desc（归质量收尾批）；AgentReachBridge（条件触发）。
 
-## 开放问题（留待红队/PRD/GRILL/UI-GATE）
+## 开放问题（留待红队/PRD/GRILL）
 
-- F6 影响面：firecrawl 包级测试与 workbench 测试中是否有断言顶层 `snap_*` 布局的用例；workbench `files` 列表路由对嵌套目录的展示形态；修复后 web-scraper 任务的 evidence 视图应开始真实可用（是否顺带断言）。
-- cninfo/api 的 limitations 具体文案（须如实、不夸大：财报=PDF 原件不抽取文本；api=按配置路径提取不做推断）。
-- 商品任务 manifest 卡的落点（ProductPriceDashboard 上/下）与渲染条件（succeeded？partial 也渲染？）。
-- RSS 标题格式与既有任务显示兼容（旧任务标题不变，新任务用新格式——无迁移问题需确认）。
-- A19 扩展名清单收敛边界（补枚举 vs 反向排除已知二进制）。
+- N2 公式：a) 分池（分页配额 + 下载配额各自计）vs b) 单池重定容（maxCalls = maxPages + 余量 + 预计附件量封顶）——各自的事件/熔断语义与测试面。
+- 分页期预算熔断的终态语义：整体 failed（error 事件）vs 有产出 partial（queryError）——何为「如实」。
+- 重定向跳的归属：分页请求的重定向跳与下载请求的重定向跳各计入哪个池。
+- Ctrl-C 测试形态：直接对 server 入口发信号（子进程级 e2e）vs 导出 shutdown 例程单元测试；信号集（SIGINT/SIGTERM 两个都要？）。
+- 双击 Ctrl-C 强退语义（第二次信号立即退出不等待 flush）是否纳入。
