@@ -52,7 +52,7 @@ export function TaskList(props: {
   return (
     <div className="view">
       <h1 className="page-title">采集任务</h1>
-      <p className="view-desc">按业务场景分层管理采集任务。新建任务后先预览数量，确认范围无误再正式开始。</p>
+      <p className="view-desc">按业务场景分层管理采集任务。支持预览的场景新建后先预览数量，确认范围无误再正式开始；直采场景新建后即开始采集。</p>
 
       {tasks.length > 0 && (
         <div className="tasklist-tabs">

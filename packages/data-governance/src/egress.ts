@@ -80,7 +80,7 @@ function parseIpv6Groups(host: string): number[] | null {
 }
 
 function ipv6Blocked(groups: number[]): boolean {
-  const [g0, g1] = groups;
+  const [g0] = groups;
   if (groups.every((g) => g === 0)) return true; // ::
   if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true; // ::1
   // IPv4-mapped ::ffff:a.b.c.d
@@ -89,7 +89,6 @@ function ipv6Blocked(groups: number[]): boolean {
   }
   if ((g0 & 0xfe00) === 0xfc00) return true; // fc00::/7
   if ((g0 & 0xffc0) === 0xfe80) return true; // fe80::/10
-  void g1;
   return false;
 }
 

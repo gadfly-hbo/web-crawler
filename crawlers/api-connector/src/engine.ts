@@ -69,7 +69,7 @@ async function guardedFetch(
 ): Promise<Response> {
   let currentUrl = url;
   let currentInit = init;
-  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+  for (let hop = 0; ; hop++) { // 上限判断内联于跳数边界（G1 清 :101 不可达尾 throw）
     const reason = egressBlockReason(currentUrl);
     if (reason) {
       throw new Error(reason);
@@ -98,7 +98,6 @@ async function guardedFetch(
     }
     return res;
   }
-  throw new Error(`重定向次数超过上限（${MAX_REDIRECT_HOPS}）`);
 }
 
 /**

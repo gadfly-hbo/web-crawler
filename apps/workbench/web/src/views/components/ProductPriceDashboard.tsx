@@ -74,7 +74,6 @@ export function ProductPriceDashboard(props: { taskId: string }) {
   const [records, setRecords] = useState<ProductRecordItem[]>([]);
   const [manifest, setManifest] = useState<DeliveryManifestInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showManifestDetail, setShowManifestDetail] = useState(false);
 
   // 抽屉状态
   const activeDrilldownState = useState<{
@@ -134,15 +133,6 @@ export function ProductPriceDashboard(props: { taskId: string }) {
         </h3>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <a
-            href={`/api/tasks/${taskId}/delivery-package`}
-            download={`delivery-${taskId}.zip`}
-            className="btn btn-primary"
-            style={{ fontSize: 13, textDecoration: 'none', background: '#b44626', borderColor: '#b44626' }}
-            title="包含 SHA-256 签名、schema、quality report、records 与证据索引的解耦自包含交付包"
-          >
-            📦 导出标准化交付包 (ZIP)
-          </a>
-          <a
             href={`/api/task/${taskId}/files/analysis.csv`}
             download="analysis.csv"
             className="btn btn-secondary"
@@ -161,120 +151,19 @@ export function ProductPriceDashboard(props: { taskId: string }) {
         </div>
       </div>
 
-      {/* 标准化交付质检证书与生态对接面板 */}
+      {/* FA1 收敛（已批准 UI 增量 A0 终裁 2）：原内嵌证书面板去重（唯一呈现移交 UniversalManifestCard），独有指标并入看板指标行 */}
       {manifest && (
-        <div
-          style={{
-            border: '1px solid #e2e8f0',
-            borderRadius: 8,
-            padding: '12px 16px',
-            background: '#f8fafc',
-            marginBottom: 20,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 16 }}>🛡️</span>
-              <span style={{ fontWeight: 600, fontSize: 13, color: '#1e293b' }}>
-                标准化交付资产规范 (Delivery Manifest v{manifest.manifestVersion})
-              </span>
-              <span
-                style={{
-                  fontSize: 11,
-                  padding: '2px 6px',
-                  background: '#dcfce7',
-                  color: '#166534',
-                  borderRadius: 4,
-                  fontWeight: 600,
-                }}
-              >
-                SHA-256 签名完备
-              </span>
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setShowManifestDetail(!showManifestDetail)}
-              style={{ fontSize: 11, padding: '3px 8px' }}
-            >
-              {showManifestDetail ? '收起交付规格 ▲' : '查看交付资产规格与指纹 ▼'}
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 10 }}>
-            <div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>数据资产版本</div>
-              <code style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{manifest.datasetVersion}</code>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>有效样本率</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-                {(manifest.qualityMetrics.dataCompletenessRate * 100).toFixed(1)}%
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>原文证据覆盖率</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#16a34a' }}>
-                {(manifest.qualityMetrics.evidenceCoverageRate * 100).toFixed(1)}%
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>下游解耦兼容性</div>
-              <div style={{ fontSize: 12, color: '#334155' }}>Parquet / DuckDB / JSONL</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>原文证据覆盖率</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#16a34a' }}>
+              {(manifest.qualityMetrics.evidenceCoverageRate * 100).toFixed(1)}%
             </div>
           </div>
-
-          {showManifestDetail && (
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6, color: '#334155' }}>
-                📑 数据文件 SHA-256 防篡改指纹清单 ({Object.keys(manifest.checksums).length} 项):
-              </div>
-              <div
-                style={{
-                  background: '#1e293b',
-                  color: '#f8fafc',
-                  padding: '8px 12px',
-                  borderRadius: 6,
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  maxHeight: 120,
-                  overflowY: 'auto',
-                }}
-              >
-                {Object.entries(manifest.checksums).map(([f, hash]) => (
-                  <div key={f} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
-                    <span style={{ color: '#93c5fd' }}>{f}</span>
-                    <span style={{ color: '#cbd5e1' }}>{hash}</span>
-                  </div>
-                ))}
-              </div>
-
-              {manifest.schema.fields.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 4, color: '#334155' }}>
-                    📋 数据集字段模式 (Schema 契约):
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {manifest.schema.fields.map((field) => (
-                      <span
-                        key={field.name}
-                        style={{
-                          background: '#e2e8f0',
-                          color: '#334155',
-                          padding: '2px 6px',
-                          borderRadius: 4,
-                          fontSize: 11,
-                        }}
-                        title={`${field.description} (${field.nullable ? '可为空' : '不可为空'})`}
-                      >
-                        <code>{field.name}</code>: {field.type}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          <div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>下游解耦兼容性</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>Parquet / DuckDB / JSONL</div>
+          </div>
         </div>
       )}
 
@@ -459,16 +348,6 @@ export function ProductPriceDashboard(props: { taskId: string }) {
           </div>
         </div>
       )}
-
-      {/* 观察事实与业务边界 */}
-      <div style={{ background: '#f8f9fa', borderLeft: '4px solid var(--color-accent, #b44626)', padding: '12px 16px', borderRadius: 4 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: '#333' }}>⚠️ 业务解释与口径边界</div>
-        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#555', lineHeight: 1.6 }}>
-          {report.caveatsAndLimits.map((c, i) => (
-            <li key={i}>{c}</li>
-          ))}
-        </ul>
-      </div>
 
       {/* 证据下钻侧边抽屉 */}
       {activeDrilldown && (

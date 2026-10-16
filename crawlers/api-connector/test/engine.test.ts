@@ -436,7 +436,7 @@ test('N2: 重定向密集分页（每页 1+5 跳）不熔断（探针 B2 反例�
   await rm(tmp, { recursive: true, force: true });
 });
 
-test('N2: >500 总跳不触发 TOKENS_EXCEEDED（条件 1 佐证，探针 C 反例）', async () => {
+test('N2: >1000 总跳不触发 TOKENS/COST_EXCEEDED（F3 扩跳：封死 maxCostUsd 漏传的 ≈976 跳顶）', async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), 'api-n2-500-'));
   const events: CrawlEvent[] = [];
   const fullPage = (size: number) =>
@@ -450,14 +450,14 @@ test('N2: >500 总跳不触发 TOKENS_EXCEEDED（条件 1 佐证，探针 C 反�
     return new Response(JSON.stringify({ code: 0, data: { items: fullPage(5) } }), { status: 200 });
   };
   const summary = await runApiConnector({
-    params: createMockParams({ pagination: { type: 'page_number', pageParam: 'page', pageSizeParam: 'size', startPage: 1, pageSize: 5, maxPages: 100 } }),
+    params: createMockParams({ pagination: { type: 'page_number', pageParam: 'page', pageSizeParam: 'size', startPage: 1, pageSize: 5, maxPages: 200 } }),
     reporter: (e) => events.push(e),
     outDir: tmp,
     dryRun: true,
     fetchFn: mockFetch,
   });
   assert.equal(summary.failed, 0, `600 跳全过不得熔断，实际：${JSON.stringify(events.filter((e) => e.type === 'queryError'))}`);
-  assert.ok(!events.some((e) => e.type === 'queryError' && String((e as { reason?: string }).reason).includes('TOKENS_EXCEEDED')));
+  assert.ok(!events.some((e) => e.type === 'queryError' && /TOKENS_EXCEEDED|COST_EXCEEDED/.test(String((e as { reason?: string }).reason))));
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -486,5 +486,91 @@ test('N2: budgets 注入小池确定性熔断——queryError + [BudgetGate] rea
   assert.ok(qErrs.length >= 1, `分页第 2 页应因小池熔断，实际事件：${JSON.stringify(events)}`);
   assert.match(String((qErrs[0] as { reason?: string }).reason), /\[BudgetGate\]/);
   assert.ok(summary.failed >= 1, '熔断应计入 failed');
+  await rm(tmp, { recursive: true, force: true });
+});
+
+// ===== 质量收尾批 T2：N6 覆盖缺口（G2/G3） =====
+
+test('N6: 301/302 POST→GET 方法改写（含 body 与 Content-Type 剥离，G2 全语义）', async () => {
+  for (const status of [301, 302]) {
+    const tmp = await mkdtemp(path.join(tmpdir(), `api-n6-${status}-`));
+    const seenMethods: string[] = [];
+    const seenInits: Array<{ body?: unknown; hasContentType: boolean }> = [];
+    const mockFetch: typeof fetch = async (input, init) => {
+      seenMethods.push((init?.method as string) ?? 'GET');
+      seenInits.push({ body: init?.body, hasContentType: Object.keys((init?.headers as Record<string, string>) ?? {}).some((h) => h.toLowerCase() === 'content-type') });
+      const url = String(input);
+      if (url.includes('hop=1')) {
+        return new Response(JSON.stringify({ code: 0, data: { items: [] } }), { status: 200 });
+      }
+      return new Response('', { status, headers: { location: `${url.split('?')[0]}?hop=1` } });
+    };
+    const summary = await runApiConnector({
+      params: createMockParams({
+        request: { url: 'https://api.example.com/reports?page={{page}}&size={{pageSize}}', method: 'POST', headers: { 'Content-Type': 'application/json' } },
+        pagination: { type: 'page_number', pageParam: 'page', pageSizeParam: 'size', startPage: 1, pageSize: 5, maxPages: 1 },
+      }),
+      reporter: () => {},
+      outDir: tmp,
+      dryRun: true,
+      fetchFn: mockFetch,
+    });
+    assert.deepEqual(seenMethods, ['POST', 'GET'], `${status} 应改写为 GET`);
+    assert.equal(seenInits[1].body, undefined, `${status} 改写后第二跳 body 应剥离`);
+    assert.equal(seenInits[1].hasContentType, false, `${status} 改写后第二跳 Content-Type 应剥离`);
+    assert.equal(summary.failed, 0);
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('N6: 5 跳重定向上限抛错（6 连跳报上限 + fetchFn 恰 6 次，G2 负边界）', async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), 'api-n6-hoplimit-'));
+  const events: CrawlEvent[] = [];
+  let fetchCalls = 0;
+  const mockFetch: typeof fetch = async (input) => {
+    fetchCalls++;
+    const url = String(input);
+    return new Response('', { status: 302, headers: { location: `${url.split('&hop=')[0]}&hop=${fetchCalls}` } });
+  };
+  await runApiConnector({
+    params: createMockParams({ pagination: { type: 'page_number', pageParam: 'page', pageSizeParam: 'size', startPage: 1, pageSize: 5, maxPages: 1 } }),
+    reporter: (e) => events.push(e),
+    outDir: tmp,
+    dryRun: true,
+    fetchFn: mockFetch,
+  });
+  assert.equal(fetchCalls, 6, '恰 6 次请求（1+5 跳）后必须停止——hopAllowance 契约');
+  const qErr = events.find((e) => e.type === 'queryError');
+  assert.ok(qErr, `第 6 跳应报上限错误，实际：${JSON.stringify(events)}`);
+  assert.match(String((qErr as { reason?: string }).reason), /重定向次数超过上限（5）/);
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test('N6: 每跳计费断言——页内第 2 跳即熔断（G3，与 G5 页级边界互补）', async () => {
+  const { BudgetGate } = await import('data-governance/budget');
+  const tmp = await mkdtemp(path.join(tmpdir(), 'api-n6-perhop-'));
+  const events: CrawlEvent[] = [];
+  let fetchCalls = 0;
+  const mockFetch: typeof fetch = async (input) => {
+    fetchCalls++;
+    const url = String(input);
+    if (url.includes('hop=1')) {
+      return new Response(JSON.stringify({ code: 0, data: { items: [] } }), { status: 200 });
+    }
+    return new Response('', { status: 302, headers: { location: `${url.split('?')[0]}?hop=1` } });
+  };
+  const summary = await runApiConnector({
+    params: createMockParams({ pagination: { type: 'page_number', pageParam: 'page', pageSizeParam: 'size', startPage: 1, pageSize: 5, maxPages: 1 } }),
+    reporter: (e) => events.push(e),
+    outDir: tmp,
+    dryRun: true,
+    fetchFn: mockFetch,
+    budgets: { pagination: new BudgetGate({ maxCalls: 1, maxTokens: undefined, maxCostUsd: undefined }) },
+  });
+  const qErr = events.find((e) => e.type === 'queryError');
+  assert.ok(qErr, 'maxCalls=1 时第 2 跳应熔断（若回归为每页计费则不熔断——每跳计费断言）');
+  assert.match(String((qErr as { reason?: string }).reason), /\[BudgetGate\].*CALLS_EXCEEDED/);
+  assert.equal(fetchCalls, 1, '仅第 1 跳发出（第 2 跳被门禁拦截）');
+  assert.ok(summary.failed >= 1);
   await rm(tmp, { recursive: true, force: true });
 });

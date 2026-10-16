@@ -78,7 +78,7 @@ export function UniversalManifestCard(props: { taskId: string }) {
               标准化交付资产规范 (Delivery Manifest v{manifest.manifestVersion})
             </div>
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-              由统一底座 data-governance 自动签发 · 全文件 SHA-256 防篡改
+              交付清单遵循 data-governance 统一规范 · 全文件 SHA-256 防篡改
             </div>
           </div>
           <span

@@ -8,6 +8,11 @@ import { summarizeTask, type TaskParams } from '../shared/task-params.js';
 import type { TaskFailure, TaskRecord, TaskStatus } from '../shared/task.js';
 import { applyEvent } from './reducer.js';
 
+/** init 期失败标记文案与反查关键词（G1：常量不导出——测试保持独立人类可见断言，改文案即红） */
+const RESTART_INTERRUPT_ERROR = '服务重启导致任务中断';
+const MASKED_KEY_KEYWORD = '脱敏密钥';
+const MASKED_KEY_ERROR = `检测到重启前残留的${MASKED_KEY_KEYWORD}，密钥不随服务重启保留，请重新提交任务`;
+
 export type { TaskCounts, TaskFailure, TaskRecord, TaskStatus } from '../shared/task.js';
 
 export interface RunningHandle {
@@ -59,7 +64,7 @@ export class TaskQueue {
       // 服务重启时仍处于 running 的任务实际已随进程死亡，如实标记中断
       if (t.status === 'running') {
         t.status = 'failed';
-        t.error = '服务重启导致任务中断';
+        t.error = RESTART_INTERRUPT_ERROR;
         t.finishedAt = new Date().toISOString();
       }
       // 重启后内存密钥已失：带脱敏密钥的 queued 任务无法还原真实密钥，直接标失败
@@ -70,12 +75,12 @@ export class TaskQueue {
         (t.params as { apiKey?: string }).apiKey!.includes('****')
       ) {
         t.status = 'failed';
-        t.error = '检测到重启前残留的脱敏密钥，密钥不随服务重启保留，请重新提交任务';
+        t.error = MASKED_KEY_ERROR;
         t.finishedAt = new Date().toISOString();
       }
       this.tasks.set(t.id, t);
     }
-    if (stored.some((t) => t.error === '服务重启导致任务中断' || t.error?.includes('脱敏密钥'))) await this.persist();
+    if (stored.some((t) => t.error === RESTART_INTERRUPT_ERROR || t.error?.includes(MASKED_KEY_KEYWORD))) await this.persist();
     this.pump();
   }
 

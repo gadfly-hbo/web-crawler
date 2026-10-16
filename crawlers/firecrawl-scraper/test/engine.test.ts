@@ -70,9 +70,9 @@ test('ScraperEngine: 落盘快照 metadata 含真实 provider（mock_adapter）'
   assert.equal(summary.succeeded, 1);
 
   // F6 修复后契约：快照统一落 outDir/snapshots/ 子目录（G1 两层定位，锁目录名=锁三消费端契约）
-  const topLevel = await fs.readdir(tmpDir, { withFileTypes: true });
-  const topDirs = topLevel.filter((e) => e.isDirectory()).map((e) => e.name);
-  assert.deepEqual(topDirs, ['snapshots'], `顶层目录应恰为 snapshots/，实得 ${topDirs.join(',')}`);
+  // G1 措辞精度（质量收尾批 T3）：全量 readdir（含文件）——顶层散落任何文件即红
+  const topNames = (await fs.readdir(tmpDir)).sort();
+  assert.deepEqual(topNames, ['snapshots'], `顶层应恰为 snapshots/ 一个条目（含文件），实得 ${topNames.join(',')}`);
   const snapEntries = await fs.readdir(path.join(tmpDir, 'snapshots'), { withFileTypes: true });
   const snapDir = snapEntries.find((e) => e.isDirectory() && e.name.startsWith('snap_'));
   assert.ok(snapDir, 'snapshots/ 下应存在 snap_* 快照目录');

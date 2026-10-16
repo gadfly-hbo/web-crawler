@@ -268,3 +268,145 @@ artifact format 声明沿既有合同 §7：single-page HTML ｜ 渲染工具 = 
 ### A9. Recheck 判据（一行）
 
 打开 `.flow/ui/addendum-product-card.html`：态 A 中 manifest 卡紧随 Dashboard 块之后、产出文件卡之前，限制声明 4 条与 `analyzer.ts:158-163` 源码逐字一致，卡头/指标四标签文案与既有 UniversalManifestCard 零差异；态 B 两卡同缺席且无空壳占位；G6 对照表唯一增量行 = product-price ∧ succeeded——全部命中即 PASS。
+
+---
+
+## 增量补记（质量与体验收尾批，2026-10-16）
+
+**Verdict: PASS** —— 四项终裁全部可从 PRD 决策 6-9、G5 初稿事实行与红队 R2/C2 直接推导：FA2 取候选 C1（四路径真值表全格真）；FA1 取③合并（推荐形态，信息零丢失）；view-desc 按两路径约束钉死新句（G5 候选原文未随附录保留，见 A8-FL1）；合同关系逐条明示（N12 取代、N13 不触碰、N9/N15 仅文案级豁免、slate 语系保留）。无规格外扩展，无 BLOCKED 项。
+
+- 阶段：dev-flow UI-GATE 增量补记（PRD 决策 9：本批 UI 三件必然触碰上批合同 N9/N13/N15，须明示取代/豁免关系）
+- 性质：对已批准合同的 append-only 补记；既有 §0-§10 与「增量补记（递延项收敛批，2026-10-16）」一字不动。未被本补记显式取代/豁免的条款（含 N1-N11、N14、裁决①-④、S1-S5、前补记 A0-A2/A5-A9）继续有效；本章 A0-A9 为本补记局部编号
+- 输入（按序完整读取）：`.flow/prd.md`（决策 6-9 + GRILL 附录 G5 UI-GATE 输入初稿）、`.flow/proposal.md`（决策 5-7）、`.flow/red-team.md`（R2 条件、C2、§5 FA1 面板级双呈现实证）、`.flow/ui-contract.md`（S4/裁决③/增量补记 S5/N9/N13/N15）；代码事实：`apps/workbench/web/src/views/components/UniversalManifestCard.tsx:81`（副标）、`:98-106`（导出按钮）、`:134-135`（生成引擎）、`:139-150`（limitations）、`views/components/ProductPriceDashboard.tsx:135-146`（重复导出按钮）、`:164-279`（内嵌证书块）、`:461-473`（caveats）、`views/TaskDetail.tsx:241-246`、`views/TaskList.tsx:55`、`styles/tokens.css`；佐证：`crawlers/firecrawl-scraper/src/pipeline.ts:152-185`、`analyzer.ts:158-163`、`crawlers/rss-collector/src/collector.ts:306-346`、`crawlers/cninfo-reports/src/engine.ts:335-339`、`crawlers/api-connector/src/engine.ts:431-435`、`packages/data-governance/src/manifest.ts:110-177`
+- 基线：baseline_dirty=[]（补记起草于实现之前）
+
+### A0. 增量裁决 —— PASS（四项终裁先行结论）
+
+**终裁 1 · FA2 副标：取候选 C1 原文，零微调。**
+
+- 新句（钉死）：`交付清单遵循 data-governance 统一规范 · 全文件 SHA-256 防篡改`
+- 旧句（废弃）：`由统一底座 data-governance 自动签发 · 全文件 SHA-256 防篡改`
+- 四路径真值表（红队 R2 kill criterion 逐格勾选）：
+
+| 生成路径 | manifest 构造事实 | 旧句「自动签发」 | C1「遵循 data-governance 统一规范」 | C1「全文件 SHA-256 防篡改」 |
+|---|---|---|---|---|
+| cninfo-reports | `createAndSaveDeliveryManifest`（engine.ts:335，data-governance 库签发） | 真 | 真（库即规范本体） | 真（computeFileSha256 签 filesToSign） |
+| api-connector | 同上（engine.ts:431） | 真 | 真 | 真 |
+| rss-collector | 手工构造 `DeliveryManifest` 对象（collector.ts:306-346），仅用类型 + `computeFileSha256`（:16/:292） | **假** | 真（遵循同一 DeliveryManifest 类型契约） | 真 |
+| product（firecrawl） | 手工构造（pipeline.ts:152-185），仅用类型 + `computeFileSha256` | **假** | 真 | 真 |
+
+- 理由：C1 三段断言全格真；旧句对 rss/product 为假（红队 R2 打回点）。C2「按 data-governance 交付规范组装 · 全文件 SHA-256 防篡改」亦全格真，但「组装」是过程性措辞——对 cninfo/api 的库自动构造弱描述、对手工两路又偏强；C1「遵循…规范」是纯符合性断言，对手工/自动对称如实，且保留与旧句的家族联系而不含签发主体断言。取 C1 原文。
+- 与「生成引擎」指标不矛盾：指标渲染 `manifest.generator.name`（UniversalManifestCard.tsx:134-135），四路径真实值为 `cninfo-reports` / `api-connector` / `web-crawler/rss-collector` / `web-crawler/firecrawl-scraper`——生成主体恒为各爬虫/引擎；C1 只断言交付清单**符合** data-governance 规范，不断言由其签发，两陈述不同维度。旧句「自动签发」对 rss/product 则与「生成引擎=手工构造方」直接矛盾。
+
+**终裁 2 · FA1 收敛形态：取③合并（推荐项）。**
+
+- 形态（product ∧ succeeded 详情收敛后）：
+  1. **Dashboard 去重四点**：删内嵌「标准化交付质检证书与生态对接面板」整块（ProductPriceDashboard.tsx:164-279，含 🛡️ 卡头/「SHA-256 签名完备」徽标/「查看交付资产规格与指纹」折叠/指标网格/指纹清单/Schema 契约）；删卡头「📦 导出标准化交付包 (ZIP)」按钮（:136-144）；删「⚠️ 业务解释与口径边界」同源 caveats 块（:461-473，pipeline.ts:180 同源实证）；「📥 导出 CSV」「📥 导出 JSON」保留零改动（:145-160）
+  2. **独有指标并入看板指标行**：原内嵌面板指标网格中与 manifest 卡重复的「数据资产版本」「有效样本率」随块删除（manifest 卡指标行保留同名标签）；独有两枚「原文证据覆盖率」（manifest.qualityMetrics.evidenceCoverageRate）与「下游解耦兼容性」（静态 `Parquet / DuckDB / JSONL`，:223）并入**看板指标行**——位置=标题行之下、品牌对比表之上（原内嵌面板位置），沿 `manifest &&` 门（:165 条件不动）与 `ppd-metrics` 同款 grid/字号/色值
+  3. **manifest 卡保持唯一呈现**：`<UniversalManifestCard taskId={task.id} />` 原样实例不动结构，独占「证书卡头 / 数据指纹折叠 / 导出 ZIP / 限制声明」四类信息；卡内指标四标签（数据资产版本/采集产出总数/有效样本率/生成引擎）与 limitations 区块（裁决③形态）零改动（副标行除外，见终裁 1/S7）
+- 不选①（去 Dashboard 内嵌块、独有指标随之消失）：信息丢失——「原文证据覆盖率」是商品分析面关键指标，须另处安放；③已含①的去重并保住两枚独有指标
+- 不选②（去 manifest 卡）：违 N13（须豁免），且消灭全类目统一交付面（其余类目仅剩此卡），与已批 S4/S5 冲突
+- 与红队定性一致：面板级双呈现（指标/指纹/导出/caveats 全重复）→ 面板级收敛（manifest 卡唯一呈现）
+- **最终点击路径**：侧栏「采集任务」（S8 新 view-desc）→ 点 succeeded 商品任务卡 → 任务详情 detail-main 自上而下 = ProductPriceDashboard（收敛后：标题行[CSV/JSON] → 看板指标行[原文证据覆盖率/下游解耦兼容性] → 品牌表 → 价格带 → 样本明细）→ UniversalManifestCard（唯一「证书/指纹/导出 ZIP/限制声明」）→「📁 产出文件」。导出分流：交付包 ZIP 仅 manifest 卡头一处；分析文件 CSV/JSON 仅 Dashboard 标题行。限制声明阅读点唯一：manifest 卡「⚠️ 限制声明 (manifest limitations)」。
+
+**终裁 3 · view-desc：钉死新句（G5 候选原文缺失，按约束重拟——见 A8-FL1）。**
+
+- 新句（钉死）：`按业务场景分层管理采集任务。支持预览的场景新建后先预览数量，确认范围无误再正式开始；直采场景新建后即开始采集。`
+- 旧句（废弃）：`按业务场景分层管理采集任务。新建任务后先预览数量，确认范围无误再正式开始。`
+- 理由：两分句分别如实覆盖预览路径（cninfo/weather-api：「预览数量」→ PreviewPanel → 正式开始，NewTask.tsx:155-166）与直采路径（product/rss：按钮直调 `startCollect()`，:149-153），保留旧句对预览路径的真实部分。**否决**「可选择先预览或直接开始」类措辞：路径由场景决定、用户无选择权（NewTask.tsx:149-160 分支），该措辞构成新的不实（入 N21）。
+
+**终裁 4 · 合同取代/豁免清单（逐条明示）：**
+
+| 既有条款 | 关系 | 明示范围 |
+|---|---|---|
+| N12（不得改动 ProductPriceDashboard 本身） | **取代**（本补记终裁 2 显式裁定，非静默违例） | 仅四点：删内嵌证书面板、删同源 caveats 块、删 ZIP 导出钮、并入两枚独有指标为看板指标行。品牌表/价格带/样本明细/证据抽屉/EvidenceDrawer/CSV/JSON 导出/加载与空态逻辑零改动 |
+| N13（不得新增组件/变体卡/路由/弹窗） | **不触碰** | 收敛在既有两组件内完成：Dashboard 删块 + 一行指标行（复用既有 inline 样式，不建新组件文件）、UniversalManifestCard 仅改一行字符串；仍为 `<UniversalManifestCard taskId={task.id} />` 原样实例 |
+| N9 的「UniversalManifestCard 既有区段」子句 | **文案级豁免** | 仅豁免 `:81` 副标一行字符串替换（S7）；卡其余区段（标题/徽标/按钮/指标四标签/limitations/指纹/Schema）逐字保留。N9 其余部分（CATEGORY_LABELS/STATUS_LABELS/四场景卡文案/.form-errors 样式）继续有效 |
+| N15（不得改既有区段与 slate 语系） | **文案级豁免 + slate 语系保留** | 文案豁免同 N9 范围；卡内 slate 语系色值（#e2e8f0/#f8fafc/#64748b/#1e293b/#dcfce7/#166534 等）与布局零改动，不做 token 半迁移；看板指标行沿 Dashboard 既有 inline 色值语系 |
+| N14（无 manifest 静默无空壳） | 保留生效 | 看板指标行沿 `manifest &&` 门，不新增占位/加载/错误态 |
+| N11 / N3 / 裁决③ / S4 / S5 / 前补记 A0-A2 | 保留 | 渲染条件、limitations 形态、卡位置均不动 |
+| 前补记 A3「零新字符串」 | **局部取代** | 仅副标一行改写（S7）；「复用既有文案」原则对其余文本保留 |
+| N1-N10 中未列各项 | 保留 | 零触碰 |
+
+### A1. Surface 增量
+
+| # | Surface | 内容 | 现状 | Trace |
+|---|---------|------|------|-------|
+| S6 | 收敛后商品详情（product ∧ succeeded） | ProductPriceDashboard 精简块（标题行仅 CSV/JSON + 看板指标行两格 + 品牌表/价格带/样本明细原样）＋其后 UniversalManifestCard 唯一「证书/指纹/导出 ZIP/限制声明」呈现；全页 ZIP 导出入口唯一、caveats 单呈现 | 内嵌证书面板 + manifest 卡面板级双呈现；双 ZIP 按钮；caveats 双呈现 | PRD D6；提案 D5；红队 §5-FA1；G5-③ |
+| S7 | manifest 卡新副标（全类目共用） | 卡头副标行换钉死新句（见 A3）；cninfo/api/rss/product 同一句 | 「由统一底座 data-governance 自动签发 · …」对 rss/product 不实 | PRD D7；提案 D6；红队 R2/C2；G5 真值表 |
+| S8 | TaskList 页 view-desc | 页面描述换钉死新句（见 A3）；`TaskList.tsx:55` 全站唯一渲染点 | 「新建任务后先预览数量…」对直采路径不全真 | PRD D8；提案 D7；红队 §5-view-desc |
+
+不在本批新增任何页面、路由、弹窗、组件文件或 token。
+
+### A2. 状态覆盖
+
+**态 A · succeeded 商品详情收敛后形态**（S6）：`analyze:true` ∧ `succeeded>0` → report 与 manifest 同 run 落盘 → Dashboard 渲染精简块（`manifest &&` 门内两格指标行）+ manifest 卡完整卡（新副标 + 指标四格 + 限制声明 4 条 + 导出 ZIP + 指纹折叠）。点击路径见 A0 终裁 2。导出分流与 caveats 单呈现同前。
+
+**态 B · 其他类目零变化（FA1 视角）+ product 无 manifest 兜底**：
+
+- cninfo/api/rss succeeded：本就无 Dashboard，FA1 收敛零变化；仅 S7 副标全局替换（与 FA1 正交）
+- weather / 非 succeeded 全类目：零变化（渲染条件 TaskDetail.tsx:241-246 不动）
+- product 无 manifest（`analyze:false` / `succeeded=0` / 预览任务）：Dashboard `!report → null` 整卡缺席，看板指标行随 `manifest &&` 不渲染，manifest 卡 404 静默——两卡同缺席沿前补记态 B，无空壳（N14）
+- G6 等价性延续：非 product 类目对 FA1 改前改后渲染集合严格相等
+
+### A3. 术语（新旧字符串对照）
+
+**改写（2 处，逐字钉死）**
+
+| 位置 | 旧句（废弃） | 新句（钉死） |
+|------|--------------|--------------|
+| S7 副标（UniversalManifestCard.tsx:81） | 由统一底座 data-governance 自动签发 · 全文件 SHA-256 防篡改 | 交付清单遵循 data-governance 统一规范 · 全文件 SHA-256 防篡改 |
+| S8 view-desc（TaskList.tsx:55） | 按业务场景分层管理采集任务。新建任务后先预览数量，确认范围无误再正式开始。 | 按业务场景分层管理采集任务。支持预览的场景新建后先预览数量，确认范围无误再正式开始；直采场景新建后即开始采集。 |
+
+**被删重复区块清单（Dashboard 内 3 项；manifest 卡侧对应呈现保留）**
+
+1. 内嵌「标准化交付质检证书与生态对接面板」整块（ProductPriceDashboard.tsx:164-279）——含面板标题「标准化交付资产规范 (Delivery Manifest v{…})」、徽标「SHA-256 签名完备」、折叠钮「查看交付资产规格与指纹 ▼ / 收起交付规格 ▲」、指标网格（数据资产版本/有效样本率/原文证据覆盖率/下游解耦兼容性）、「📑 数据文件 SHA-256 防篡改指纹清单 (N 项):」、「📋 数据集字段模式 (Schema 契约):」
+2. 卡头按钮「📦 导出标准化交付包 (ZIP)」（:136-144）——manifest 卡同名按钮保留为唯一入口
+3. 「⚠️ 业务解释与口径边界」块（:461-473）——与 `manifest.limitations` 同源（pipeline.ts:180 `limitations: report.caveatsAndLimits`），改由 manifest 卡「⚠️ 限制声明 (manifest limitations)」单呈现
+
+**保留不变**：manifest 卡全部其余文本（卡头标题/「SHA-256 签名已就绪」/「📦 导出标准化交付包 (ZIP)」/「查看数据指纹 ▼」/指标四标签/「⚠️ 限制声明 (manifest limitations)」/「📑 …指纹清单」「📋 …(Schema 契约)」）；Dashboard「📥 导出 CSV」「📥 导出 JSON」、品牌表/价格带/样本明细/抽屉文案；「原文证据覆盖率」「下游解耦兼容性」两标签随并入保留（非新字符串）。
+
+### A4. 增量负面清单（编号接续 N15→N16）
+
+- **N16**：Dashboard 收敛不得触碰品牌对比表、价格带分布、商品样本明细与证据下钻、EvidenceDrawer、「📥 导出 CSV」「📥 导出 JSON」按钮文案与行为、loading/空态逻辑——超出 A0 终裁 2 四点之外的任何 Dashboard 改动均违约
+- **N17**：页面不得出现第二个「📦 导出标准化交付包 (ZIP)」入口——ZIP 导出唯一入口为 manifest 卡头（任何类目同）
+- **N18**：caveats 不得双呈现——product ∧ succeeded 下「⚠️ 业务解释与口径边界」块不得复活；限制声明单呈现于 manifest 卡（裁决③形态）；不得另起一套分析口径措辞变体
+- **N19**：看板指标行仅限两格「原文证据覆盖率」「下游解耦兼容性」——不得搬入 数据资产版本/有效样本率/采集产出总数/生成引擎（属 manifest 卡指标行，标签不得改）；不得脱离 `manifest &&` 门独立占位或新增空态
+- **N20**：副标不得再含「自动签发」「统一底座」字样；不得按类目条件切换副标（四类目共用同一句）；不得改「生成引擎」指标取值来源（恒为 `manifest.generator.name`）
+- **N21**：view-desc 不得恢复「新建任务后先预览数量」单一路径表述；不得写「可选择预览或直接开始」类暗示用户可选的措辞（路径由场景决定）
+- **N22**：不得引入新 token/样式体系；UniversalManifestCard slate 语系色值零改动（N15 保留项重申）；看板指标行复用 Dashboard 既有 inline 样式形态
+
+### A5. Trace links（增量）
+
+| 面 / 状态 | PRD | 提案 | GRILL / 红队 |
+|-----------|-----|------|--------------|
+| S6 收敛形态（③合并：去重四点 + 独有指标并入 + 卡唯一呈现） | D6 | D5 | G5-③；红队 §5-FA1（面板级双呈现） |
+| S6 态 A / 态 B（其他类目零变化 + 无 manifest 兜底） | D6 | D5 | G6（延续）；N14 |
+| S7 新副标（C1）+ 四路径真值表 | D7 | D6 | G5 真值表；红队 R2/C2 |
+| S8 新 view-desc（两路径措辞） | D8 | D7 | 红队 §5-view-desc |
+| 合同取代/豁免（N12 取代 / N13 不触碰 / N9·N15 文案级豁免） | D9 | — | 红队「UI-GATE 需明示对 N9/N13/N15 的取代关系」 |
+
+### A6. Artifacts（增量工件）
+
+| 文件 | 内容 |
+|------|------|
+| `.flow/ui/addendum-quality-polish.html` | 增量原型：§1 收敛后商品详情（Dashboard 精简块 + manifest 卡唯一呈现 + 删除清单标注）＋ §2 其他类目详情零变化对照（rss succeeded 为例 + FA1 影响面真值表 + product 无 manifest 兜底注记）＋ §3 TaskList 新 view-desc（新旧句对照） |
+
+artifact format 声明沿既有合同 §7 与前补记 A6：single-page HTML ｜ 渲染工具 = 无（纯静态，浏览器直接打开）｜ 无 JS、无外部资源、无网络请求 ｜ token 值自 tokens.css 逐字内联，卡与 Dashboard 形态按组件源码 inline style 手工复刻 ｜ navy 虚线批注层为合同标注非产品 UI ｜ 既有 `.flow/ui/index.html` 与 `.flow/ui/addendum-product-card.html` 零改动。
+
+### A7. Data fidelity（增量样例披露）
+
+- **合成数据**：任务标题、品牌表数值、manifest 指标（datasetVersion `v1.0-m9x2k4ab`/`v1.0-k31d8c2f`、9 条/147 条、88.9%/100.0%、原文证据覆盖率 100.0%）、TaskList tab 计数为合成——真实形态以 firecrawl pipeline / rss collector 落盘产物为准
+- **真实数据**：限制声明 4 条（product）为 `crawlers/firecrawl-scraper/src/analyzer.ts:158-163` caveatsAndLimits 原文逐字——「网页标价不等于最终成交价，亦不包含优惠券、会员折扣或满减促销。」「采集样本仅代表本次采集页面，不等于全网全渠道全量商品。」「未进行跨品牌完全同款对标匹配，标价差异受配置与规格影响。」「数据严禁直接推导为销量、市场占有率或降价策略。」；rss 固定 4 条为 `collector.ts:331-335` 原文（截断条件第 5 条见前补记 §8，原型未渲染）；「生成引擎」真实值 `web-crawler/firecrawl-scraper`（pipeline.ts:156）/ `web-crawler/rss-collector`（collector.ts:311）；manifestVersion `1.0.0`；「下游解耦兼容性」值 `Parquet / DuckDB / JSONL` 为 ProductPriceDashboard.tsx:223 静态文本；卡头/按钮/指标标签为组件源码既有文本
+- **真实 caveats 文本已知**：product 4 条如上（analyzer 恒定产出，不依赖样本数）；S7/S8 新句为 A3 钉死句，非源码现状
+
+### A8. Findings（增量，严重度降序）
+
+- **FL1 · LOW** — G5「view-desc 候选 C1/C2（直采+预览两路径措辞，见初稿原文）」的候选字符串未随 PRD 附录逐字保留（仓内无初稿原文可核）。终裁按已定约束（涵盖两路径、如实）重拟并钉死于 A3；若用户持有原候选且偏好不同口味，属文案级替换，不影响其余三项终裁
+- **FL2 · LOW** — `TaskList.tsx:84` 空态辅助句「从「新建采集任务」开始：挑选业务场景 → 预览数量 → 开始采集。」与旧 view-desc 同为单一路径表述；提案决策 7 只点 `:55` view-desc，本批不动（最小 diff）。记为残留；如需一并改，须 Diff Gate 增量
+- **FL3 · LOW** — N18 单呈现的崩溃窗口残余：若 `analysis_summary.json` 已落而 `manifest.json` 未落（进程中断于 pipeline.ts:180-185 之间），Dashboard 不再显示 caveats、manifest 卡 404 静默 → 该窗口内限制声明不可见。两文件同 run 落盘（manifest 末写）使窗口极窄；接受此残余。若不可接受须回退 N18 保留 Dashboard caveats 兜底——需用户明示
+- **FL4 · INFO** — 前补记 FA1（双呈现）/FA2（副标不实）由本批 S6/S7 收口；FA4（内嵌面板无 limitations 字段）随整块删除自动消解；FA3（预览兜底）维持
+
+### A9. Recheck 判据（一行）
+
+打开 `.flow/ui/addendum-quality-polish.html`：§1 商品详情中「📦 导出标准化交付包 (ZIP)」**按钮**仅 manifest 卡头 1 处（navy 批注层删除清单文字除外）、Dashboard 无内嵌证书面板与「业务解释与口径边界」、看板指标行恰两格（原文证据覆盖率/下游解耦兼容性）、manifest 卡副标逐字=「交付清单遵循 data-governance 统一规范 · 全文件 SHA-256 防篡改」且限制声明 4 条与 analyzer.ts:158-163 逐字一致；§2 非商品类目详情对 FA1 零变化（仅标 S7 副标）；§3 view-desc 产品行逐字=钉死新句——旧句「新建任务后先预览数量…」「自动签发」只允许出现在 navy 批注层对照，产品面不得出现——全部命中即 PASS。

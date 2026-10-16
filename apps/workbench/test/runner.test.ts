@@ -101,7 +101,9 @@ test('任务级超时：到点发结构化 error 事件并终止进程，无残�
 });
 
 test('N4：取消后超时到点不再追加「任务超时」事件（取消语义干净）', async () => {
-  // G3 确定性时序：stubborn-crawler 忽略 SIGTERM——cancel(ready 后) 早于 1500ms 超时，
+  // G3 确定性时序前提：ready→cancel < timeoutMs=1500 < SIGKILL=ready+2500（plain .mjs 启动 ≪1.5s 保证第一条；
+  // killGraceMs 保证第三条）。极端负载下若 ready→cancel 拖过 1500ms，超时行先吐即假红——按复跑政策先复跑一次再定罪（PRD Testing）。
+  // stubborn-crawler 忽略 SIGTERM——cancel(ready 后) 早于 1500ms 超时，
   // SIGKILL(ready+2500ms) 晚于超时 → 超时到点时 canceled=true 且 exited=false，正中修复分支
   const lines: string[] = [];
   const run = spawnRunner(fixture('stubborn-crawler.mjs'), { killGraceMs: 2500, timeoutMs: 1500 });

@@ -1,63 +1,44 @@
-# REVIEW 阶段评审 — 执行治理收尾批（N2 预算定容 + Ctrl-C 孤儿清理）
+# REVIEW 评审报告 — 质量与体验收尾批（规划内最后一批）
 
 - **日期**：2026-10-16
-- **Fixed point**：`5b762d4`（范围 = `git diff 5b762d4` + 未跟踪新文件）
-- **评审人**：REVIEW 独立评审者（未参与实现与红队；双轴评审按 `matt-code-review` 执行）
-- **baseline_dirty**：[]（`.flow/` 流程产物扫读不计入范围违规）
-- **Verdict：PASS**
+- **固定点**：`9a97f17`（main）；范围 = `git diff 9a97f17`（16 文件）+ 未跟踪 `.flow/ui/addendum-quality-polish.html`；baseline_dirty = []
+- **评审者**：独立 REVIEW 阶段评审者（未参与实现与红队），全部结论以代码与命令输出为证
+- **Verdict：PASS**（1 MEDIUM + 2 LOW 非阻塞 + 3 INFO，无阻塞项）
 
-## 1. 复跑实际结果（亲自执行，含一次 flake）
+## 一、必须复跑的实际结果（全部亲自执行）
 
-| 轮次 | 命令 | 结果 |
+| 项 | 命令 | 结果 |
 |---|---|---|
-| 第 1 次 | `pnpm test && pnpm typecheck && pnpm build` | **exit 1**：workbench **212/213**，1 红 = `queue.test.ts:270`「重启恢复：带脱敏密钥的 queued 任务标 failed」`ENOTEMPTY`（tmp 清理竞态）；其余 10+27+24+32+14 全绿 |
-| 第 2 次（红队 V3 flake 政策） | 同命令 | **三段 exit 0，213/213**（governance 10 + firecrawl 27 + api 24 + rss 32 + cninfo 14 + workbench 106）；typecheck 6 包全过；`vite build` 成功 |
+| 全量门禁 | `pnpm test && pnpm typecheck && pnpm build` | **三段 exit 0**。test：governance 10 + firecrawl 27 + api 27 + rss 32 + cninfo 14 + workbench 107 = **217/217 全绿**（= 基线 213 + 4；无测试删除，零回退）；typecheck 6 项目全过；build vite 成功 |
+| C1 红灯探针（复核） | 删分页池 `maxCostUsd: undefined` → 跑 N2 用例 | **红**：`COST_EXCEEDED` 于第 163 页（≈977 跳，与红队数学吻合）→ 还原后绿；还原后 sha256 与探针前逐字节一致 |
+| C4b 反噬探针（复核） | `MASKED_KEY_KEYWORD`→『掩码密钥』→ 跑 queue.test | **红 2 个**（独立人类可见断言守住）→ 还原后 12/12 绿；哈希复原一致 |
+| C3 二十轮（复核） | 20 轮循环 queue.test | **20/20 轮全绿** |
+| 探针留痕检查 | `git status` + 双文件 sha256 | 与初始脏清单完全一致——**无留痕** |
 
-计数核对：213 = 205 基线 + 8（api 20→24、workbench 102→106，其余持平），与 tasks.md 完成证据一致；tasks 预估 +6、实际 +8（shutdown×4）已如实披露。第 1 次红的用例**本批 diff 未触碰**，fixed point 同样存在清理缺口（见 F1）。
+## 二、红队条件与猎查项逐条核验
 
-## 2. 对抗探针（/tmp，仓库零改动）
+- **C1**：N2 用例 maxPages 100→200（1200 跳），标题改「>1000 跳」，断言扩 COST_EXCEEDED；探针红→绿独立复现。✅
+- **C2**：新副标逐字节 = A3 钉死句；四路径事实基亲自实证（cninfo/api 自动签发、rss/product 手工构造）；四格皆真。✅
+- **C3**：`:186`、`:243`、`:305` 三处 finally 先 close 后 rm；`:273-303` close 在 try 末尾——见 Finding 1。20 轮验收过。⚠️ 部分
+- **C4**：两条魔法字符串收敛为三常量（queue.ts:12-14，不导出、关键词内嵌）；测试独立断言；反噬探针复现。✅
+- **UI 合同 A0-A9**：副标/view-desc 逐字=A3；ZIP 唯一入口（全 src grep 仅 UniversalManifestCard）；caveats 单呈现（类型字段在位无渲染点）；N16 恰四点改动（diff 恰 4 hunk）；N17-N22 逐条满足；其他类目零变化（UI diff 恰三文件）；showManifestDetail 死状态清理正当（终裁 2 第①点必然结果）；ui-contract 纯追加 142+/0-。✅（一处像素偏差见 Finding 2）
+- **A8 披露落实**：FL1 重拟句钉死落地；FL2 残留句原样（TaskList.tsx:84 在位）；FL3 维持记录。✅
+- **R4 取舍**：PRD 决策 2 记录理由 + 用例名即决策记录。✅
+- **虚假证据**：三项关键证据（20 轮/探针/反噬）全部独立复现为真；217/217 逐包一致。✅
+- **范围外改动**：代码 diff 11 文件全部落在七件已定决策内；无未使用导入。✅
 
-1. **BudgetGate 默认值反例（条件 1 的测试有效性）**：`new BudgetGate({ maxCalls: 1000 })` 不传 maxTokens → **第 501 跳 `TOKENS_EXCEEDED`**；显式 `maxTokens/maxCostUsd: undefined` 后 600 跳全过，`getConfig()` 证实 spread 显式 `undefined` 真覆盖默认。→ 若引擎漏传 `undefined`，「>500 总跳」用例必然红。**次级反例**：只关 maxTokens、漏 maxCostUsd 时 600 跳仍全过（默认成本顶 ≈976 跳）——见 F3。
-2. **interruptActive 内存/磁盘一致性**：fake runner 先 emit `done`（内存 `succeeded`）、`handle.done` 未落定时 `interruptActive()` → `close()` → **磁盘 raw 停在 `running`** → `q2.init()` 标 `failed / 服务重启导致任务中断`。已完成任务在窄窗口内被误标中断——见 F2。
+## 三、Findings（严重度降序）
 
-## 3. 红队 6 条放行条件逐条核验（全 ✅）
+1. **MEDIUM · non-blocking** — `queue.test.ts:299`（重启脱敏用例）：`await q2.close()` 位于 try 末尾而非 finally——C3 kill criterion 要求统一。绿路径竞态已消除（40 轮佐证），残余仅为断言失败路径的 ENOTEMPTY 遮蔽（错误遮蔽，非假绿/假红）。tasks.md T4 证据句对该处不准确。**recheck**：按 `:186` 同款 hoist 移入 finally，或修正措辞记录偏差。
+2. **LOW · non-blocking** — `ProductPriceDashboard.tsx:156-166`：看板指标行与已批原型像素不一致（实现 160px/gap12/mb16/字号14-13，原型 130/10/20/13-12）；色值全符、N22 满足、A9 recheck 不含像素。**recheck**：对齐原型或合同补偏差记录。
+3. **LOW · non-blocking** — `engine.test.ts:546` 附近：G3 附录原文「fetch 恰 2 次」vs 实现断言 `=== 1`（checkAndReserve 先于 fetch，第 2 跳请求前被拦——断言更强，规格文本失准）。**recheck**：PRD 附录补勘误即可。
+4. **INFO** — `engine.test.ts:459`：断言消息仍写「600 跳」而用例现为 1200。**recheck**：消息改 1200。
+5. **INFO** — `queue.test.ts:314/:318`：新 mock 用例 `as never` 旁路类型检查（邻例 `as const` 即可）。**recheck**：改类型化字面量。
+6. **INFO** — `tasks.md` 各任务 Acceptance 子勾选框保持 `[ ]`（流程卫生）。**recheck**：勾选或删框。
 
-| # | 条件 | 证据 |
-|---|---|---|
-| 1 | token/cost 处置 + >500 跳佐证 | `engine.ts:206-211` 两池显式 undefined；600 跳用例；探针反例 |
-| 2 | 分页配额覆盖 1+5 跳 worst-case | `engine.ts:205-208` 公式恰等 guardedFetch 单请求 6 跳上界；B2 用例 18 跳不熔断 |
-| 3 | 终态=queryError 与 rss 一致 | catch 分类未动；`[BudgetGate]` 前缀自带；queue.test 归类行（partial） |
-| 4 | SIGHUP 在册 | `shutdown.ts:14` 三信号；测试 `process.emit('SIGHUP')` |
-| 5 | shutdown 三选一唯一化 | `queue.ts:137-143` 仅 terminate 不改写；两阶段测试断言磁盘 running + 重启中断 |
-| 6 | 例程单测形态 | `installSignalHandlers({queue, exit})` + uninstall，无子进程 e2e |
+## 四、双轴结论
 
-## 4. GRILL G1-G7 与竞态边界猎查
+- **Spec 轴**：七件全部落地且证据可复现；C1/C2/C4 全条满足、C3 行为满足一处字面偏差；UI 三件与合同逐字相符（一处像素偏差）。
+- **Standards 轴**：无文档化标准违例；两条 judgement call（as never 旁路/blocker 构造略绕）。
 
-- **G1 双竞态封堵真实**：`queue.ts:254`（onProcessDone 早退）+ `queue.ts:194`（pump 拒绝调度）；测试断言磁盘 t1=running、t2=queued、cancels==[t1] 可分辨守卫缺失。
-- **G2 等待有界 + 尾部 flush**：await done 由 SIGTERM→5s SIGKILL 收敛；runner close 先冲残留行再 resolve。双击 exit(130) 逃生门。
-- **竞态/边界**：无活动任务 no-op ✓；双击同步 exit(130) ✓；uninstall 无残留 ✓；shutdown IIFE 无 catch（生产路径 cancel/close 不抛，理论风险不列）；HTTP server 不随关停关闭（PRD 承诺序列外，窗口极窄，不列）。
-- **N2 公式正确性**：clamp 后取有效值 ✓；pageSize 缺省 20 ✓；budgets 按池 ?? 替换语义 ✓；下载池对服务端超发条目不加保护——PRD 明文「熔断顶非资源分配」按设计接受。
-- **虚假证据/范围**：tasks.md 与实测相符（一处形式瑕疵 F4）；改动仅 engine + workbench 生命周期 + 测试 + 流程产物，无范围外改动。
-
-## 5. 双轴评审
-
-**Standards**：0 硬违规；1 个测试 mock 同构小重复（judgement call，engine.test.ts 两段重定向循环）；budgets seam 与 ShutdownQueue 窄接口为 spec 明文要求不计 Speculative Generality。
-
-**Spec**：提案两件决策完整落地；PRD 决策 1-8 逐条对应实现与测试；Diff Gate 六项增量全部实现；0 缺失 0 creep。
-
-## 6. Findings（按严重度）
-
-**Blocking：无。**
-
-| # | 严重度 | 位置 | 归属阶段 | 判定 | 一行 recheck 判据 |
-|---|---|---|---|---|---|
-| F1 | minor | `queue.test.ts:270-298`（finally 直接 rm，q2 从不 close） | 上游既有测试缺陷（fixed point 即存在，本批 diff 未触碰） | non-blocking | 首跑红（ENOTEMPTY）复跑绿；finally 补 `await q2.close()` 后连跑 ≥5 次不再现即认定已修 |
-| F2 | minor | `queue.ts:254`（interrupting 早退跳过 persist） | G1 边界语义（与旧 Ctrl-C 磁盘结果等价，非回归） | non-blocking | 探针 2 场景：内存 succeeded → 磁盘 running → 重启误标中断；若裁决不接受，改法=interrupting 下仅跳过改写、终态仍落盘 |
-| F3 | minor | `engine.test.ts:446-465`（>500 用例为 600 跳） | 条件 1 佐证形态覆盖不足 | non-blocking | 漏传 maxCostUsd 的回归在 600 跳下仍绿（默认成本顶 ≈976 跳）；扩到 >1000 跳或断言 getConfig() 即封死 |
-| F4 | trivial | `.flow/tasks.md`（T1-T3 勾 [x] 但其下验收项仍 [ ]） | 流程产物一致性 | non-blocking | 勾选自相矛盾但完成证据段如实；勾上验收项即消 |
-
-## 7. 一句话总结
-
-- **Standards**：0 硬违规，最重即测试 mock 小重复。
-- **Spec**：0 缺失/0 creep，红队 6 条件与 G1-G7 全数落地有测试钉死——最重即 F2 的完成瞬间被关停窄窗口误标（非回归）。
-- **Verdict：PASS**（4 条 non-blocking，均不阻塞放行）。
+**总结**：门禁 217/217 三段 exit 0，三项对抗探针全部复现且还原无痕——**PASS**。

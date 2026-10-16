@@ -86,7 +86,6 @@ export function spawnRunner(spec: SpawnSpec, opts: { killGraceMs?: number; timeo
       }, grace);
       timer.unref();
     };
-    const cancel = terminate;
     let timeoutTimer: NodeJS.Timeout | undefined;
     if (opts.timeoutMs !== undefined) {
       timeoutTimer = setTimeout(() => {
@@ -107,7 +106,7 @@ export function spawnRunner(spec: SpawnSpec, opts: { killGraceMs?: number; timeo
     };
     child.on('close', clearTimeoutTimer);
     child.on('error', clearTimeoutTimer);
-    return { done, cancel, pid: child.pid };
+    return { done, cancel: terminate, pid: child.pid };
   };
 }
 

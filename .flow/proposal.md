@@ -1,35 +1,44 @@
-# 提案（讨论稿固化）— 执行治理收尾批（N2 预算定容 + Ctrl-C 孤儿清理）
+# 提案（讨论稿固化）— 质量与体验收尾批（规划内最后一批）
 
-来源：`.flow/handoff.md`（递延收敛批，2026-10-16）递延台账前两项 + WC-AR-05 评审 N2 recheck 判据 + WC-AR-05 GRILL Q7 记录的 Ctrl-C delta。
-用户指令："继续下一批"（台账优先级 N2 居首）。
+来源：`.flow/handoff.md` 递延台账 + WC-AR-05 评审 N5/N6 recheck 判据 + 递延收敛批评审 F-2/F3 观察项 + UI 合同（含增量补记）Findings FA1/FA2/F4。
+用户指令："继续下一批"（路线图：规划内最后一批，走完递延台账清零）。
 固化时间：2026-10-16。
 
 ## 已定决策（不可推翻，后续阶段只可细化）
 
-1. **N2 api-connector 预算定容**（WC-AR-05 评审 non-blocking，红队实证）：现状 `maxCalls = maxPages + 5`（分页时代定容），WC-AR-05 起 guardedFetch 每跳计费、附件下载也计入同一池 → 合法多附件任务约 55 次调用后剩余附件全部 `[BudgetGate] 熔断` 失败。修复要求（N2 recheck 判据）：
-   - 以 maxPages=2、单页 10 个附件跑引擎，全部附件下载成功（或上限已按「页数 + 预计附件量」重新定容）；
-   - 分页期预算熔断的事件分类与终态语义须钉死并测试（红队指出现状有语义漂移：分页熔断原先 try 外抛出 → error 事件 + 整体 failed；现在可能被捕获为 queryError → 有产出任务终态从 failed 降为 partial——何为正确语义须裁决）。
-   - 公式方案（分池 vs 单池重定容）留给红队/GRILL 裁决，但**必须维持 fail-closed**（下载调用不得无配额）。
-2. **Ctrl-C 孤儿爬虫关停清理**（WC-AR-05 GRILL Q7 记录的 delta）：现状 Ctrl-C/SIGTERM 杀 workbench server 后，已 spawn 的 detached 爬虫进程组成孤儿继续采集。修复要求：server 收到 SIGINT/SIGTERM 时——终止活动任务子进程组（复用既有 terminate/cancel 路径）→ 等待队列落盘 flush（queue.close()）→ 再退出进程；无活动任务时直接干净退出。语义边界：关停是「尽力而为的清理」而非「优雅完成」——被关停任务在下次启动时按既有重启恢复语义处理（running → 中断失败），不新增状态。
-3. **测试**：两项各有确定性用例（N2 用 recheck 场景；Ctrl-C 的可测形态——信号处理器单元级或子进程级——留 GRILL 钉死）；全量门禁 `pnpm test && pnpm typecheck && pnpm build` 保持绿，基线 205 零回退。
-4. **范围**：仅动 api-connector engine 预算逻辑与 workbench server 生命周期两处；不改事件协议形状、不改 runner 进程管理既有语义（Ctrl-C 复用 terminate）。
+1. **N5 三处异味清理**（WC-AR-05 评审裁决 non-blocking，本批收口）：
+   - `apps/workbench/server/runner.ts` `const cancel = terminate;` 无意义别名 → 直接返回 `cancel: terminate`；
+   - `packages/data-governance/src/egress.ts` 解构 `[g0, g1]` 后 `void g1` 压制 → 只解构 g0；
+   - `apps/workbench/server/queue.ts` 错误文案字面量与 `'脱敏密钥'` 子串反查的魔法字符串耦合 → 提为同一常量（文案改动即测试失败的静默失配消除）。
+   - 全部零行为变化（recheck 判据：全量测试不变绿即回退）。
+2. **N6 四处覆盖缺口补测**（WC-AR-05 评审 recheck 判据逐条）：
+   - 5 跳重定向上限抛错路径（api-connector `guardedFetch`，6 连跳报「重定向次数超过上限」）；
+   - 301/302 POST→GET 方法改写（现仅 303 有用例）；
+   - mock:true 任务不豁免重启脱敏判定（queue 重启恢复用例补 mock:true + 脱敏 key 标 failed）；
+   - 每跳计费断言（redirect 第二跳 checkAndReserve 被调——行为级断言即可）。
+3. **递延批评审观察项收口**：engine.test 顶层断言措辞（G1 原文「顶层 readdir 恰为 ['snapshots']」——改为全量 readdir 断言）；N4 用例时序前提注记（极端负载假红风险，补注释与复跑政策指引）。
+4. **执行治理批评审遗留**：F1——`queue.test.ts` 重启恢复用例 finally 补 `await q2.close()`（修 ENOTEMPTY 清理竞态 flake）；F3——N2 「>500 跳」用例扩到 >1000 跳或补 `getConfig()` 断言（封 maxCostUsd 漏传缺口）。
+5. **FA1 视觉收敛（UI 范围）**：商品任务详情消除双「📦 导出交付包」按钮与同源 caveats 双呈现——具体收敛形态（保留 manifest 卡入口、Dashboard 内嵌面板去重）留 UI-GATE 裁决。
+6. **FA2 卡头副标措辞（UI 范围）**：「由统一底座 data-governance 自动签发」对商品任务不准确——改为如实措辞（形态留 UI-GATE，注意该卡为四类目共用）。
+7. **TaskList view-desc 措辞（UI 范围）**：「新建任务后先预览数量，确认范围无误再正式开始」对直采场景（商品/RSS）不全真——改为涵盖直采与预览两路径的如实措辞（UI-GATE 裁决）。
 
 ## 约束与边界
 
-- fail-closed 不动摇：任何调用（分页/下载/重定向跳）不得绕过 BudgetGate。
-- Ctrl-C 清理不得引入新的异步复杂度到热路径（信号处理器只在关停时生效）。
-- 无 UI 范围（本批跳过 UI-GATE）。
+- N5/N3 观察项全部零行为变化；N6 纯增测试；UI 三项为文案/去重收敛，不引入新交互。
+- 全量门禁 `pnpm test && pnpm typecheck && pnpm build` 保持绿，基线 213 零回退。
+- F2（完成瞬间被关停窄窗口误标）维持已裁决的可接受状态，不纳入本批。
+- firecrawl `budget-gate.ts` 经核实为一行 re-export 门面（`export * from 'data-governance/budget'`）非真实副本——本批记录澄清，不改动。
 
 ## 已拒绝/排除的替代方案
 
-- 下载调用不进 BudgetGate（违背 fail-closed 治理前提）。
-- server 关停时等待任务自然完成（Ctrl-C 语义是立即关停，不是等待）。
-- N5/N6 其余项、FA1/FA2、view-desc（归质量收尾批）；AgentReachBridge（条件触发）。
+- F2 窄窗口语义改写（已裁非回归，维持记录）。
+- firecrawl budget-gate 门面删除（re-export 形态有既有 import 使用面，去重收益低于改动风险）。
+- 为 N4 时序用例重构等待机制（注释 + 复跑政策已足，过度工程）。
 
-## 开放问题（留待红队/PRD/GRILL）
+## 开放问题（留待红队/PRD/GRILL/UI-GATE）
 
-- N2 公式：a) 分池（分页配额 + 下载配额各自计）vs b) 单池重定容（maxCalls = maxPages + 余量 + 预计附件量封顶）——各自的事件/熔断语义与测试面。
-- 分页期预算熔断的终态语义：整体 failed（error 事件）vs 有产出 partial（queryError）——何为「如实」。
-- 重定向跳的归属：分页请求的重定向跳与下载请求的重定向跳各计入哪个池。
-- Ctrl-C 测试形态：直接对 server 入口发信号（子进程级 e2e）vs 导出 shutdown 例程单元测试；信号集（SIGINT/SIGTERM 两个都要？）。
-- 双击 Ctrl-C 强退语义（第二次信号立即退出不等待 flush）是否纳入。
+- FA1 收敛方向：去 Dashboard 内嵌导出按钮 vs 去 manifest 卡导出按钮 vs 合并组件；caveats 双呈现是保留分析口径/交付限制两处还是收敛一处。
+- FA2 新措辞的具体文案（四类目共用卡，措辞须对 firecrawl/cninfo/api/rss 四者都如实）。
+- view-desc 新措辞的具体文案。
+- N6「每跳计费断言」的实现形态（fetchFn 计数 vs budgets 小池行为断言）。
+- F3 采用扩跳数（>1000）还是 getConfig 断言，或两者。

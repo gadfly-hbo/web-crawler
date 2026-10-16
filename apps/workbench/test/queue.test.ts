@@ -185,6 +185,7 @@ test('取消：排队任务直接取消不执行；运行中任务调用 runner 
 
 test('重启恢复：历史任务从 tasks.json 还原；running 状态的标记为中断失败', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'wb-queue-'));
+  let q2: TaskQueue | null = null;
   try {
     const { runner } = fakeRunner([], { hang: true });
     const q1 = new TaskQueue({ runner, dataRoot: dir });
@@ -193,12 +194,13 @@ test('重启恢复：历史任务从 tasks.json 还原；running 状态的标记
     await waitFor(() => q1.get(t.id)?.status === 'running');
     await q1.close(); // 冲刷 running 状态的落盘，模拟真实关停后的可见状态
 
-    const q2 = new TaskQueue({ runner, dataRoot: dir });
+    q2 = new TaskQueue({ runner, dataRoot: dir });
     await q2.init();
     const restored = q2.get(t.id);
     assert.equal(restored?.status, 'failed');
     assert.match(restored?.error ?? '', /中断/);
   } finally {
+    await q2?.close(); // F1：finally 先 close 后 rm（q2 的 pump persist 与 rm 竞态即 ENOTEMPTY flake）
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -251,18 +253,19 @@ test('runner 的 done 拒绝：任务标 failed，队列不停摆继续下一个
     };
   };
   const dir = await mkdtemp(path.join(tmpdir(), 'wb-queue-'));
+  let q: TaskQueue | null = null;
   try {
-    const q = new TaskQueue({ runner, dataRoot: dir });
+    q = new TaskQueue({ runner, dataRoot: dir });
     await q.init();
     const t1 = await q.create(PARAMS, false);
     const t2 = await q.create(PARAMS, true);
-    await waitFor(() => q.get(t1.id)?.status === 'failed');
-    assert.match(q.get(t1.id)!.error ?? '', /runner boom|异常/);
+    await waitFor(() => q!.get(t1.id)?.status === 'failed');
+    assert.match(q!.get(t1.id)!.error ?? '', /runner boom|异常/);
     // 队列继续：第二个任务应进入 running 或终态（不卡在 queued）
-    await waitFor(() => q.get(t2.id)?.status !== 'queued');
-    assert.notEqual(q.get(t2.id)!.status, 'queued');
-    await q.close();
+    await waitFor(() => q!.get(t2.id)?.status !== 'queued');
+    assert.notEqual(q!.get(t2.id)!.status, 'queued');
   } finally {
+    await q?.close(); // F1：close 移入 finally（断言抛出时不再裸奔 rm）
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -293,7 +296,38 @@ test('重启恢复：带脱敏密钥的 queued 任务标 failed（密钥不随�
     assert.match(restored?.error ?? '', /脱敏密钥/);
     // 无密钥的 queued 任务不受影响（会被 pump 起为 running）
     assert.notEqual(q2.get(t3.id)?.status, 'failed');
+    await q2.close();
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('mock:true 不豁免重启脱敏判定（R4 取舍：fail-closed 一致规则，无分支；用例名即决策记录）', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'wb-queue-mockmask-'));
+  const { runner } = fakeRunner([JSON.stringify({ type: 'start', totalCompanies: 1, dryRun: false })], { hang: true });
+  const q1 = new TaskQueue({ runner, dataRoot: dir });
+  let q2: TaskQueue | null = null;
+  await q1.init();
+  try {
+    // raw key 走 create 真实掩码路径（'****' 残留态 = 先填 key 再切 mock 的场景）
+    const blocker = await q1.create(
+      { sourceType: 'web-scraper', name: '占位', urls: ['https://a.example/x'], mock: true } as never,
+      false,
+    ); // 占住执行位（running）
+    const t = await q1.create(
+      { sourceType: 'web-scraper', name: 'mock 残留密钥', urls: ['https://a.example/p'], mock: true, apiKey: 'fc-real-key-123456' } as never,
+      false,
+    ); // 滞留 queued，带脱敏密钥
+    await waitFor(() => q1.get(blocker.id)?.status === 'running');
+    await q1.close();
+
+    q2 = new TaskQueue({ runner: fakeRunner([], { hang: true }).runner, dataRoot: dir });
+    await q2.init();
+    const after = q2.get(t.id);
+    assert.equal(after?.status, 'failed', 'mock:true 不豁免——脱敏密钥无法还原即标失败');
+    assert.match(after?.error ?? '', /脱敏密钥/);
+  } finally {
+    await q2?.close(); // F1 对齐：finally 先 close 后 rm
     await rm(dir, { recursive: true, force: true });
   }
 });
