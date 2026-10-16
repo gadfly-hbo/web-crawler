@@ -1,42 +1,36 @@
-# dev-flow 交接卡 — WC-AR-04 RSS 适配器 PoC（DONE 2026-10-16）
+# dev-flow 交接卡 — WC-AR-06 工作台体验与回归包（DONE 2026-10-16）
 
 ## 本批交付
 
-- 提交 `359816e`（main，已推送 origin）：44 文件，+2725/−326。
-- **新包 `crawlers/rss-collector`**：公开 RSS/Atom 只读采集——快照（content.xml + 哈希 + 双时间戳 + truncated 标记）→ 规则式抽取（title/link/published/summary，缺失 null 不估算）→ 字段级证据（locateSnippet 解码前原文切片，回验命中 confidence 1.0）→ manifest（schema/limitations/operations/snapshotsDir，verifyDeliveryPackage 可核验）→ workbench 展示（进度/失败清单/终态分级/快照 XML 回看）。
-- **治理复用实证**：出口门禁（校验期 + manual 重定向逐跳守卫，RSS_ALLOW_PRIVATE_ORIGIN 仅测试豁免）、任务级 timeoutMs、进程组取消（A13 e2e）、预算门禁（maxCalls=urls.length，重定向不占配额——N2 防复发公式）。
-- **data-governance 加法**：SnapshotStorage 可选 xml 字段；egress 尾随点修复（N1）+ `::ffff:` 死分支删除（N3）。
-- **验证**：`pnpm test && pnpm typecheck && pnpm build` 三段 exit 0，**194/194**（governance 10 + firecrawl 27 + api-connector 20 + rss 32 + cninfo 14 + workbench 91；基线 151 + 43），SHIP 前 fail-closed 复跑一致；评审 3 轮（FAIL/FAIL/PASS）独立复跑均逐包一致。
+- 提交 `3b86356`（main，已推送 origin）：23 文件，+1816/−373。
+- **RSS 场景放开**（UI 合同经用户批准）：场景卡（第 3 位）+ `SCENARIO_SOURCE_TYPES` 显式映射（类型层消灭静默回落）+ RssPicker 表单（Feed URL 多行 + 条目上限）+ 「开始 RSS 采集」直采 + StageBar 两段式变体。
+- **任务列表五类目分区**：`CATEGORY_ORDER` 单源数据驱动（cninfo→product-price→weather→api→rss），补齐既有 product-price 任务不可见缺口；空类目隐藏；`partitionTasks` 纯函数。
+- **限制声明展示**：UniversalManifestCard 常显「⚠️ 限制声明」区块（RSS 任务详情可见，无则不渲染）。
+- **A 用例固化**：A01（依赖 15 名基线/零 agent-reach/无安装脚本）+ A18（mock 商品样板采集链路冒烟，分析链路显式递延 F6）+ A19（51 文本文件主机名扫描，IP 经 egress 判类）。
+- **验证**：三段 exit 0，**204/204**（基线 194 + 10），SHIP 前 fail-closed 复跑一致；评审 2 轮（FAIL/PASS）。
 
-## 下一批前置（WC-AR-06 工作台体验与回归包）
+## 采纳文档工作包状态（全部完结）
 
-依赖 WC-AR-04 已就绪，验收 = 主线样板 + RSS 样板双回归绿：
+00 基线 ✓ → 01 采纳评审 ✓ → 02 契约增量 ✓ → 05 执行治理 ✓ → 04 RSS PoC ✓ → **06 工作台体验与回归包 ✓（本批）** → 03 AgentReachBridge 暂缓（触发条件满足时另评审）。§6 PoC 三组验收、§8 WC-AR-06「主线样板 + RSS 样板双回归绿」均达成。
 
-- **RSS 场景入口放开**：`apps/workbench/shared/task-params.ts` 的 `COLLECTOR_SCENARIOS` 当前零改动（本批刻意收起）；放开 = 新增 rss 场景卡 + 新建任务表单（urls 1-5、limit、deadlineMs）。表单校验直接调 `validateRssParams`（workbench 已依赖 rss-collector/domain）。
-- **来源类型/限制声明展示**：后端已备好数据面——`CATEGORY_LABELS.rss`（📡 RSS 资讯 chip）、任务详情面板 rss 分支（Feed 数/条目上限/软超时）、边界声明文案，均在 `App.tsx`/`task-params.ts` 现成可扩展。
-- **A 用例固化为常规回归**：A01（不装 Agent-Reach 可跑）/A18（mock 商品样板端到端）/A19（无隐式外呼）已有测试事实，WC-AR-06 需将其固化为显式回归用例。
-- RSS 创建链路：`POST /api/tasks`（sourceType 'rss'）已端到端可用（dryRun 自动钳 false）。
+## 递延项（在案，按优先级）
 
-## 递延项（评审记录在案，均 non-blocking/info）
+1. **F6（firecrawl 快照布局地雷，最优先）**：engine 写快照到 outDir 顶层而 `--analyze`/workbench 读 `outDir/snapshots/`——mock 商品任务「成功但分析恒空」。修法约 3 行（engine 传 `path.join(outDir,'snapshots')`）；修复批同时更新 product-smoke-e2e 的 `TODO(F6)` 断言并补分析内容断言（A18 补强）。
+2. **cninfo/api 补 manifest limitations**（各一行参数，PRD 决策 7 递延）+ 商品面板渲染 manifest 卡落点。
+3. **A19 残留窄缺口**：R2-1 无点整数/十六进制公网编码（`134744072`）绕过判类（约 3 行：无点数字 token 先判类）；F-2 扩展名白名单前向缺口（.yaml/.csv/.snap）；F-3 `pnpm.overrides` 不设防。
+4. **RSS 任务标题同质**（UI 合同 F2）：`summarizeTask` rss 分支附 Feed 数或首 host（shared 小改）。
+5. WC-AR-05 遗留 N2（api-connector 预算定容）/N4/N5/N6 维持递延；N1/N3 已于 WC-AR-04 修复。
+6. TaskList view-desc「先预览数量」措辞对直采场景不全真（UI 合同 F4，新 PRD 需求才动）。
 
-WC-AR-05 遗留 N2（api-connector 预算定容）/N4/N5/N6 维持递延；本批新增：
+## 已知限制
 
-1. **F3**：egress 只剥一个尾随点，`localhost..` 多点形态仍放行（本机 DNS ENOTFOUND 无可达旁路；修复一行 `/\.+$/` + 探针）。
-2. **F2 裁决记录**：manifest 手工构造（非 createAndSaveDeliveryManifest）——helper 无法表达 snapshotsDir 与 Feed 级计数；正式化时评估扩展 helper。
-3. **F4/F5/F6 小异味**：existsFileSync 冗余包装、guardReason 等价分支、feed-parser 永不 null 的返回类型、边界常量三处重复。
-4. **F7**：manual 重定向 3xx 每跳不消费响应体（undici 连接占用，≤5 跳有界）。
-5. **R3(info)**：anyTruncated 置位先于快照落盘的边角顺序；**R3(info 二轮)**：3xx 无 Location 归类为 queryError（reducer 语义等价）。
-6. **firecrawl 布局地雷**（GRILL G4 发现，本批只标注不修）：engine 写快照到 outDir 顶层而消费端读 `outDir/snapshots/`——`--analyze` 路径实际读空目录，属既有缺陷，建议独立小批修复。
-
-## 已知限制（PRD 已声明）
-
-- 解析器冻结样本范围：真实世界 Feed 变体（命名空间、GBK 编码等）未覆盖，正式化前需评估引入 XML 库。
-- DNS rebinding 不防（与既有爬虫一致）；RSS 无凭据无 LLM，凭据渠道接入前必须先过 WC-AR-00 治理。
+- UI 层无组件测试基建（本批 UI 验收 = vite build + UI 合同对照 + 分区纯函数测试）；如需引入 React 测试属独立基建批。
+- A18 分析链路断言待 F6 修复批补强（本批显式不覆盖、TODO 标注在案）。
 
 ## 流程产物
 
-`.flow/` 下 proposal / red-team / prd（含 G1-G12 与评审补记）/ tasks（含证据勾选）/ review-findings（3 轮）均已随 359816e 入库；state.json 为本机状态（gitignored）。
+`.flow/` 下 proposal / red-team / prd（含 G1-G11）/ ui-contract + ui/index.html（用户批准件）/ tasks（含证据）/ review-findings（2 轮）随 3b86356 入库；state.json 本机状态。
 
 ## 降级披露
 
-本批红队为主代理内联执行（子代理两次 429 限量后按技能降级），对抗距离弱于结构性独立评审；GRILL Round 1 与三轮 REVIEW 均为 fresh 子代理（其中二轮一次 429 后 resume 成功）。
+UI 合同起草子代理在完成两份产物后最终返回时 400 中毒（疑似截图验证触发非文本内容），产物已落盘且经主代理完整性核验（六节/四裁决/N1-N10/recheck 判据/原型字符串抽查），流程未受影响。
