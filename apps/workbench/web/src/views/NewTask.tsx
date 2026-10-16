@@ -13,6 +13,7 @@ import { TimeTypePicker } from './new-task/TimeTypePicker';
 import { usePreviewSync } from './new-task/usePreviewSync';
 import { WeatherPicker } from './new-task/WeatherPicker';
 import { ProductPricePicker } from './new-task/ProductPricePicker';
+import { RssPicker } from './new-task/RssPicker';
 
 export function NewTask(props: { onCreated: (id: string) => void; showToast: (m: string) => void }) {
   const [state, dispatch] = useReducer(newTaskReducer, initialNewTaskState);
@@ -61,7 +62,7 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
     <div className="view">
       <h1 className="page-title">新建采集任务</h1>
       <p className="view-desc">选择已固化的数据采集场景，设置极简业务参数即可一键预览并采集。</p>
-      <StageBar stage={state.stage} />
+      <StageBar stage={state.stage} direct={state.scenario === 'rss'} />
 
       {state.errors.length > 0 && (
         <div className="form-errors">
@@ -135,13 +136,22 @@ export function NewTask(props: { onCreated: (id: string) => void; showToast: (m:
             />
           )}
 
+          {state.scenario === 'rss' && (
+            <RssPicker
+              urlsText={state.rssUrlsText}
+              limitText={state.rssLimitText}
+              onChangeUrlsText={(text) => dispatch({ type: 'SET_RSS_URLS_TEXT', payload: text })}
+              onChangeLimitText={(text) => dispatch({ type: 'SET_RSS_LIMIT_TEXT', payload: text })}
+            />
+          )}
+
           {state.scenario === 'custom-request' && (
             <CustomScenarioGuide showToast={props.showToast} />
           )}
 
-          {state.scenario === 'product-price-comparison' ? (
+          {state.scenario === 'product-price-comparison' || state.scenario === 'rss' ? (
             <button className="btn btn-primary" onClick={() => void startCollect()}>
-              开始采集与中位数分析
+              {state.scenario === 'rss' ? '开始 RSS 采集' : '开始采集与中位数分析'}
             </button>
           ) : (
             state.scenario !== 'custom-request' && (

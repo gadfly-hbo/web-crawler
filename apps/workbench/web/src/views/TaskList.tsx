@@ -1,12 +1,9 @@
 import { useState, type ReactNode } from 'react';
 
 import { STATUS_LABELS, type TaskRecord } from '../../../shared/task';
-import {
-  CATEGORY_LABELS,
-  getTaskCategory,
-  type TaskCategory,
-} from '../../../shared/task-params';
+import { CATEGORY_LABELS, CATEGORY_ORDER, getTaskCategory } from '../../../shared/task-params';
 import { StatusChip } from '../components/StatusChip';
+import { partitionTasks } from './taskPartition';
 
 export function TaskList(props: {
   tasks: TaskRecord[];
@@ -14,18 +11,11 @@ export function TaskList(props: {
   onNew: () => void;
 }) {
   const { tasks, onOpen, onNew } = props;
-  const [filter, setFilter] = useState<'all' | TaskCategory>('all');
+  const [filter, setFilter] = useState<'all' | (typeof CATEGORY_ORDER)[number]>('all');
 
-  const formalTasks = tasks.filter((t) => !t.dryRun);
-  const previewTasks = tasks.filter((t) => t.dryRun);
+  const { preview: previewTasks, byCategory } = partitionTasks(tasks);
 
-  const cninfoTasks = formalTasks.filter((t) => getTaskCategory(t.params) === 'cninfo');
-  const weatherTasks = formalTasks.filter((t) => getTaskCategory(t.params) === 'weather');
-  const apiTasks = formalTasks.filter((t) => getTaskCategory(t.params) === 'api');
-
-  const filteredTasks = filter === 'all'
-    ? formalTasks
-    : formalTasks.filter((t) => getTaskCategory(t.params) === filter);
+  const filteredTasks = filter === 'all' ? tasks.filter((t) => !t.dryRun) : byCategory[filter];
 
   const renderCard = (t: TaskRecord) => {
     const cat = getTaskCategory(t.params);
@@ -73,28 +63,17 @@ export function TaskList(props: {
           >
             全部 ({tasks.length})
           </button>
-          <button
-            type="button"
-            className={`tasklist-tab ${filter === 'cninfo' ? 'active' : ''}`}
-            onClick={() => setFilter('cninfo')}
-          >
-            🏢 上市公司财报 ({cninfoTasks.length})
-          </button>
-          <button
-            type="button"
-            className={`tasklist-tab ${filter === 'weather' ? 'active' : ''}`}
-            onClick={() => setFilter('weather')}
-          >
-            🌤️ 城市气象数据 ({weatherTasks.length})
-          </button>
-          {apiTasks.length > 0 && (
-            <button
-              type="button"
-              className={`tasklist-tab ${filter === 'api' ? 'active' : ''}`}
-              onClick={() => setFilter('api')}
-            >
-              🔌 通用 API ({apiTasks.length})
-            </button>
+          {CATEGORY_ORDER.map((cat) =>
+            byCategory[cat].length > 0 ? (
+              <button
+                key={cat}
+                type="button"
+                className={`tasklist-tab ${filter === cat ? 'active' : ''}`}
+                onClick={() => setFilter(cat)}
+              >
+                {CATEGORY_LABELS[cat].icon} {CATEGORY_LABELS[cat].label} ({byCategory[cat].length})
+              </button>
+            ) : null,
           )}
         </div>
       )}
@@ -133,9 +112,13 @@ export function TaskList(props: {
             </div>
           )}
 
-          {renderSection('🏢 上市公司财报', cninfoTasks, renderCard)}
-          {renderSection('🌤️ 城市气象数据', weatherTasks, renderCard)}
-          {renderSection('🔌 通用 API 接口', apiTasks, renderCard)}
+          {CATEGORY_ORDER.map((cat) =>
+            renderSection(
+              `${CATEGORY_LABELS[cat].icon} ${CATEGORY_LABELS[cat].label}`,
+              byCategory[cat],
+              renderCard,
+            ),
+          )}
         </>
       )}
     </div>

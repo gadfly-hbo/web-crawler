@@ -30,6 +30,7 @@ interface ManifestData {
     }>;
   };
   checksums: Record<string, string>;
+  limitations?: string[];
 }
 
 export function UniversalManifestCard(props: { taskId: string }) {
@@ -134,6 +135,19 @@ export function UniversalManifestCard(props: { taskId: string }) {
           <div style={{ fontSize: 12, color: '#334155' }}>{manifest.generator.name}</div>
         </div>
       </div>
+
+      {manifest.limitations && manifest.limitations.length > 0 && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+          <div style={{ fontWeight: 600, marginBottom: 6, color: '#334155', fontSize: 12 }}>
+            ⚠️ 限制声明 (manifest limitations)
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#475569', lineHeight: 1.7 }}>
+            {manifest.limitations.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {showDetail && (
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 12 }}>

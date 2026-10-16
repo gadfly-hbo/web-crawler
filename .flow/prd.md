@@ -1,134 +1,104 @@
-# PRD — WC-AR-04 RSS 适配器 PoC
+# PRD — WC-AR-06 工作台体验与回归包
 
-- 规格 precedence：`.flow/proposal.md` ＞ 本文件；红队报告 `.flow/red-team.md`（GO-WITH-CONDITIONS）的条件已逐条吸收进实现决策并标注 KA 编号。
-- 发布方式：本仓库未配置 issue tracker，PRD 落盘 `.flow/prd.md`（沿用本流程既有降级惯例）。
+- 规格 precedence：`.flow/proposal.md` ＞ 本文件；红队 `.flow/red-team.md`（GO-WITH-CONDITIONS）的 C1–C5 已逐条吸收并标注 KA 编号。
+- 发布方式：仓库未配置 issue tracker，PRD 落盘 `.flow/prd.md`（既有降级惯例）。
 
 ## Problem Statement
 
-工作台目前只有三个固化数据源（cninfo 财报、api-connector、web-scraper 商品样板）。要验证平台的可扩展性主张——"新增一个公开只读来源能走完 快照 → 抽取 → 证据 → manifest → 工作台展示 的完整治理链"——需要一个最小但真实的新渠道实验。RSS 是最合适的选择：公开、只读、零凭据、零 LLM、零新依赖，且能直接复用 WC-AR-05 刚交付的出口门禁、任务超时与进程组终止治理。
+RSS 渠道（WC-AR-04）后端全链已就绪，但工作台上用户看不见也用不了：场景库没有 RSS 卡片、表单没有 Feed 输入、任务列表分区硬编码遗漏了商品与 RSS 两类任务、任务详情看不到 manifest 限制声明。同时，采纳文档承诺的 A01/A18/A19 三项常规回归断言尚未固化为测试。
 
 ## Solution
 
-新增 `crawlers/rss-collector` 爬虫包：输入一批已批准的公开 Feed URL，逐个拉取原文并存为带哈希与双时间戳的 XML 快照，规则式抽取条目的 title/link/published/summary 四字段并生成可回验原文的字段级证据，最终产出 records/evidences/manifest 交付包。workbench 以纯加法接入：新 sourceType `rss` 的参数校验、任务分发与展示，但场景入口默认收起（不在场景清单露出），放开留给 WC-AR-06。
+工作台体验层纯加法：RSS 场景卡 + Feed 表单（直采路径，无预览）；任务列表改为类目驱动的通用分区（补齐商品与 RSS）；任务详情 manifest 卡增限制声明区块（有则显示）。回归包：A01（不装 Agent-Reach 可跑）与 A19（无隐式安装/外呼）固化为仓库级断言，A18 以「采集链路不变」层级固化 mock 商品样板的 workbench 级 spawn 冒烟（分析链路显式递延至 F6 修复批）。
 
 ## User Stories
 
-1. 作为数据工程师，我想提交一个包含最多 5 个公开 Feed URL 的采集任务，以便用最小配置验证新渠道接入。
-2. 作为数据工程师，我想让每个 Feed 原文以 XML 快照形式落盘（含 SHA-256 哈希与请求/接收双时间戳），以便事后审计与防篡改核验。
-3. 作为数据工程师，我想让每个条目的 title/link/published/summary 都携带指向 Feed 原文行号与字符偏移的证据，以便任何字段值可回验原文。
-4. 作为数据工程师，我想让原文没有的字段显式记为 null 加缺失原因（尤其禁止估算发布时间），以便下游不会把猜测当事实。
-5. 作为数据工程师，我想让任务自动生成 manifest（含 schema、质量指标、limitations 与关键文件校验和），以便交付包可用既有防篡改工具核验。
-6. 作为工作台用户，我想在任务列表看到 RSS 任务的逐 Feed 进度、失败清单与如实的终态分级（全部成功=succeeded、部分失败=partial、全部失败=failed），以便不用看日志就知道结果。
-7. 作为安全负责人，我想让所有 Feed URL（含重定向后的每一跳）都经过出口门禁拦截私网/回环目标，以便爬虫不能被诱导访问内网。
-8. 作为安全负责人，我想让凭据类风险在新渠道为零（无凭据、argv 无任何密钥），以便新增渠道不引入新的暴露面。
-9. 作为平台维护者，我想让 Feed 拉取次数受预算门禁限制（每 Feed 一次配额、重定向每 Feed 最多 5 跳），以便失控任务自动熔断。
-10. 作为平台维护者，我想让 RSS 任务受任务级超时保护（到点先发结构化 error 事件再终止进程组），以便挂起任务不占住串行队列。
-11. 作为平台维护者，我想让上游 Feed 内容（标题、摘要、链接）只作为不可信数据处理、永不执行，以便 A09 类诱导攻击无效。
-12. 作为平台维护者，我想让结构漂移的 Feed（未知标签、缺字段、截断）保留原文并如实标注缺失，以便 A14 类情况不产生脑补数据。
-13. 作为平台维护者，我想让出口门禁修复尾随点主机名绕过（`localhost.`），以便门禁的"识别回环"契约没有字面缺口。
-14. 作为验收人，我想在不安装任何外部 agent 工具的情况下全程运行与测试 RSS 采集，以便验证 A01/A19 的零依赖主张。
+1. 作为运营人员，我想在场景库点选「公开 RSS 资讯」卡片并粘贴 Feed URL 直接开始采集，以便不用 API 工具就能用上新渠道。
+2. 作为运营人员，我想在任务列表按类目分区（财报/商品/气象/API/RSS）找到我的全部历史任务，以便商品和 RSS 任务不再「创建后消失」。
+3. 作为数据消费者，我想在任务详情看到交付 manifest 的限制声明（如"发布时间不做估算"），以便知道数据能信什么、不能信什么。
+4. 作为平台维护者，我想让 A01/A18/A19 成为每次全量测试自动执行的永久断言，以便"不装外部 agent 工具、无隐式外呼、样板不回归"从口头承诺变成门禁。
 
 ## Implementation Decisions
 
-### 新包 rss-collector（照抄三爬虫模式）
+### RSS 场景放开（C5：五触点绑定为同一完成判据）
 
-1. **包结构**：`main.ts`（CLI 入口 + parseArgs 纯函数）、`domain/`（参数类型 + validateRssParams，镜像 api-connector/domain 惯例，供 workbench 复用）、`events.ts`（事件类型 + NDJSON 解析器）、`feed-parser.ts`（纯函数解析器）、`collector.ts`（采集编排）。package.json exports 与 tsconfig 照抄 firecrawl-scraper；依赖仅 `data-governance: workspace:*`，devDeps 仅 tsx/typescript/@types/node——**零新外部依赖**（KA4/A01）。pnpm workspace 的 `crawlers/*` glob 自动纳入。
-2. **CLI**：`--urls`（逗号分隔，1–5 个）、`--limit`（条目上限，默认 50）、`-o/--out-dir`、`--json`（NDJSON 模式）、`--deadline-ms`（整任务级软超时，默认 60000，KA5）。参数校验失败 → 输出 error 事件 + 非零退出（对齐 cninfo/api-connector 行为）。
-3. **事件协议（KA1 裁决，理由必读）**：提案钉的规范内容是"6 类事件协议 + workbench reducer 可直接消费"（括号里的 firecrawl 类型名清单是描述性举例——且与 firecrawl 实际代码不符，实际叫 `scrape_failed`）。红队证明这两句按字面不能同时成立：workbench reducer 说的是 cninfo 事件方言，firecrawl 形状的 done.summary 会让部分失败任务误判 failed。**裁决：RSS 事件保持 6 类分类学（start / 单条进度 / 单条保存 / 单条失败 / done / error），类型名采用 workbench reducer 已消费的方言**——`start`（totalCompanies=Feed 数）、`file`（status downloaded/failed，code=域名、name=Feed 标题）、`queryError`（拉取级失败：门禁拦截/超时）、`done`、`error`；done.summary 采用 CrawlSummary 兼容形状（companies=Feed 数、matched=条目总数、downloaded/skipped/failed=Feed 级计数、bytes、outDir）。reducer 零改动、既有任务类型零行为变化，"可直接消费"从口号变成被端到端测试证明的事实。
-4. **dry-run**：RSS PoC 不提供 dry-run；workbench 创建 rss 任务时 dryRun 标志忽略（按正式采集执行）。
+1. **数据**：`ScenarioId` 增 `'rss'`；`COLLECTOR_SCENARIOS` 增 RSS 卡（title「公开 RSS 资讯采集」、badge「只读 Feed · PoC」、category crawler、描述含"任务即白名单、不抓正文"）。
+2. **表单态与映射**（两处静默回落陷阱必须同时闭合）：表单态增 `rssUrlsText`（换行分隔，默认空）与 `rssLimitText`（可选）；`SET_SCENARIO` 增 rss→`'rss'` 映射；`getTaskParams` 增 rss 分支——`{sourceType:'rss', name:'公开 RSS 资讯采集', urls: 换行解析+trim+去空+去 # 注释行（沿商品样板先例）, limit: 可选正整数}`。**deadlineMs 不露出**（CLI 默认 60s 足够，开放问题落定）。
+3. **RssPicker 组件**：镜像 ProductPricePicker 形态——Feed URL 文本域（每行一个，placeholder 示例）、条目上限可选输入、既有 `form-errors` 中文错误清单；校验经 `validateTaskParams` 已有分发自动生效。
+4. **直采路径**：沿 product 先例——stage 停 1，按钮「开始 RSS 采集」直调 `startCollect()`，不出现「预览数量」（RSS 无 dry-run，服务端钳 false）。StageBar 形态裁决留给 UI Contract。
 
-### 采集与治理链
+### 任务列表类目驱动分区（C2：本批必做，含 product-price）
 
-5. **出口门禁（A10，复用 WC-AR-05）**：CLI 校验期逐 URL 过 `egressBlockReason`（含 `localhost.` 尾随点修复后，见决策 14）；运行期 fetch 采用 manual 重定向逐跳守卫（模式照抄 api-connector guardedFetch：每跳先守卫后请求、每 Feed 限 5 跳、303/301/302 方法改写）。
-6. **预算公式（KA3，防 N2 复发）**：`BudgetGate maxCalls = urls.length`——一个 Feed URL 占一次全局配额（无论重定向几跳）；重定向跳数不占全局配额，由每 Feed 5 跳上限约束。断言 `callsMade === urls.length` 且带重定向的 Feed 仍成功。
-7. **快照（KA2）**：data-governance 的 SnapshotStorage **加法扩展**：`saveSnapshot` 增可选 `xml?: string` 入参 → 产物 `content.xml`、formats 含 `'xml'`、content_hash 覆盖 XML 文本；metadata.files 增可选 `xml` 字段。旧调用（不传 xml）行为逐字节不变（对齐 WC-AR-02 的 response_type/truncated 加法先例）。**禁止**把 XML 塞进 html/markdown 字段（元数据谎言）。
-8. **解析器（KA4，保守边界）**：手写字符串解析，冻结样本范围。只处理 5 种 XML 预定义实体（&amp; &lt; &gt; &apos; &quot;）与 CDATA 剥壳；容忍 BOM 与空白。支持 RSS 2.0（item/title/link/pubDate/guid/description）与 Atom（entry/title/href/updated/published/summary）两个冻结变体。未知结构/缺字段 → 该字段 null + missing_reason，原文原样保留；不做 DTD、命名空间展开、外部实体（字符串解析天然免疫 XXE）。**禁止估算发布时间**。
-9. **抽取与证据**：每条目四字段 title/link/published/summary → FieldEvidence（extractorType `'parser'`，sourceText 为 Feed 原文，locateSnippet 定位行号/偏移，confidence 1.0 仅当定位命中，否则 0 并记 missing_reason）；recordId 由条目 link/guid 派生稳定哈希。产物：records.jsonl、evidences.jsonl、evidence.sqlite（EvidenceIndexStore）。
-10. **交付**：`createAndSaveDeliveryManifest`（sourceType `'rss'`），schema 字段集 = recordId/feedUrl/title/link/published/summary/qualityStatus/missingReason；limitations 至少含"冻结样本范围的手写解析器""不抓取条目正文与附件""发布时间不估算"；operations 记 `{ backend: 'rss_native_fetch' }`。manifest 可被既有 verifyDeliveryPackage 核验。
-11. **内容检查（A05）**：响应非 Feed（如挑战页/HTML）→ 该 Feed 标 failed（reason 注明"响应不是合法 Feed"），不当作空 Feed 静默成功。
-12. **条目链接不跟随（数据流声明）**：抽取层只读原文字段，任何条目 link 不发起网络请求（由设计保证 + 测试断言 fetch 调用数 == Feed 数）。
+5. **通用分区**：TaskList 的 tabs 与 sections 由五类目（cninfo/product-price/weather/api/rss）数据驱动生成（替换三分区硬编码），防第七类来源再漏；空态规则统一为「该类目无任务时隐藏对应 tab」（对齐现 api tab 行为，最终裁决留 UI Contract）；卡片 chip 不动（已正确）。
+6. **可测性**：分区计算提为纯函数（输入 tasks，输出各类目过滤结果），workbench 测试文件单测覆盖五类目各一任务样例。
 
-### workbench 接入（全部加法）
+### 限制声明展示（C3：落点限定）
 
-13. **参数与分发**：task-params 增 `RssTaskParams`（sourceType 'rss'、name、urls 1–5、limit、deadlineMs 可选）与 SourceType `'rss'`；`validateRssParams`（urls 非空且 ≤5、逐一经出口门禁、limit 正整数 ≤500、deadlineMs 正整数；"URL 域白名单"语义 = **任务即白名单**：仅访问任务中显式批准的 Feed URL，数据流声明与采纳文档 §6 一致）；buildCrawlerSpawnSpec 增 rss 分支（argv 无任何凭据）；queue 的 outDir 映射增 rss → rss-collector 目录；summarizeTask/getTaskCategory/CATEGORY_LABELS 增 rss 类目。workbench 增 `rss-collector: workspace:*` 依赖。**reducer 零改动；COLLECTOR_SCENARIOS 零改动（场景入口默认收起，放开 = WC-AR-06）**。
+7. **UniversalManifestCard 增 limitations 区块**：manifest 含 `limitations` 时渲染为列表（无则整个区块不渲染，不占位）。**验收措辞限定**：仅 rss 任务详情有内容（rss manifest 恒有 limitations）；商品任务路由到 ProductPriceDashboard 不渲染该卡——落点补齐与 cninfo/api 补 limitations 数据均递延（后者归下一批爬虫小改）。既有静态边界声明（App.tsx 四来源文案）保留不动。
 
-### 递延项处置（提案逃生条款触发）
+### A 用例固化（C1/C4）
 
-14. **N1 修复带入本批**：egressBlockReason 主机名归一化剥尾随点（`localhost.`、`foo.localhost.` 拦截）——红队认定其阻塞本批 A10 验收正确性；**N3 顺带**：删除 `::ffff:` 点分 mapped 死代码分支（行为零变化，防潜伏 bug）。N2（api-connector 预算定容）/N4/N5/N6 维持递延（N2 的防复发已由决策 6 在新包内解决）。
+8. **A18（C1 裁决：降级断言 + F6 显式递延）**：新增 workbench 级 mock 商品样板 spawn 冒烟 e2e（rss-e2e 同模式；firecrawl `--mock` 零网络无需豁免 env）——断言终态 succeeded、事件流完整（firecrawl 词汇表 start/scraping/snapshot_saved×9/done）、快照落盘、manifest.json 落盘；**显式标注不覆盖分析内容**（F6 布局地雷在案：analyze 读空 snapshots/ 目录、totalRecords=0 为既有缺陷，测试注释留 `TODO(F6)`，修复批补分析断言）。cninfo 样板回归 = 包级既有 14 用例 + workbench parity 用例全绿（不新增真源 e2e）。A18 语义 = 「采集链路不变」。
+9. **A01（不装 Agent-Reach 可跑）**：固化三条断言——pnpm-lock 文本不含 `agent[-_]?reach` 依赖；各 package.json 的 scripts 无 `postinstall`/`preinstall` 安装脚本；workbench 依赖名集合 ⊆ 已知基线集合（依赖名级而非版本级，防合法升级误报）。
+10. **A19（无隐式安装/外呼）**：测试目录静态扫描——遍历全仓 `test/**`（含 fixtures），提取 `https?://` 主机名，主机 ∉ allowlist 即失败。**allowlist 预定义**（C4）：`example.com`、`*.example.com`、裸 `.example` TLD 变体（brand-a.example 等）、`127.0.0.1`/`localhost`/`[::1]`、私网字面量、`www.w3.org`（XML 命名空间）、`api.firecrawl.dev` 与 `wttr.in`（真实端点 fixture，带注释标注）。**顺手修正两个真实域 fixture**：`httpbin.org`→`httpbin.example.com`、`mysite.com`→`mysite.example.com`（纯测试文件改动，不违反零改动约束）。
+11. **落位**：A01/A19 断言放 `apps/workbench/test/adoption.test.ts`（批次名即"工作台回归包"），扫描根 = 仓库根（经 `path.resolve` 推导）。
 
 ## Testing Decisions
 
-- **好测试标准**：只测外部可观察行为（NDJSON 输出行、落盘文件、终态、进程行为），不测内部实现细节；每个验收点至少一条负向用例。红队要求 **RSS 冻结样本 ≥20 用例**，分布如下（合计 26+，全部本地化，无外网）：
-  - **解析器纯函数（10）**：RSS2.0 正常、Atom 变体、合法空 Feed（A06）、截断样本（A07）、CDATA、5 实体解转义、缺 title/link/published（null+missing_reason，A14）、BOM+空白、带注释/未知标签的漂移样本、每用例附 locateSnippet 回验断言（sourceText 偏移命中原文）。
-  - **采集编排（8）**：正常采集落盘（content.xml + metadata 哈希 + 双时间戳）、404/500 → failed、deadline 到点 → done 收尾（failed 计入，非外层 kill，KA5）、302→公网 逐跳跟随成功、302→私网 拦截（A10）、校验期私网/`localhost.` URL 拒绝（A10+N1）、挑战页/HTML 响应 → failed 且注 reason（A05）、预算公式（重定向 Feed 成功且 callsMade==urls.length，KA3）+ 条目链接零跟随断言（A12/A20）。
-  - **manifest/交付（2）**：manifest 生成含 schema/limitations/operations；verifyDeliveryPackage 核验通过。
-  - **CLI（2）**：-h 帮助零退出；非法参数 → error 事件 + 非零退出。
-  - **A09（1）**：条目字段含脚本/伪协议内容时作为纯数据保留原样（无执行面）。
-  - **workbench（4）**：validateRssParams 单元（>5 URL 拒绝、私网拒绝）；spawn spec 单元（rss 分支 argv 无凭据）；端到端 2 Feed 一成一败 → 终态 partial + counts/failures 如实（KA1 裁决的证明用例）；类目标签。
-  - **egress（2）**：N1 探针（`http://localhost./`、`http://foo.localhost./` 拦截）；N3 回归（`::ffff:` 探针全拦截 + 全量旧用例不回退）。
-- **测试基建复用**：本地 HTTP 假服务器（cninfo/firecrawl 先例）、fetchFn 注入 seam（api-connector engine 先例）、冻结样本以 fixture 文件存 `test/fixtures/*.xml`。
-- **模块与先例**：rss-collector 新测试文件对齐三爬虫命名；data-governance 扩展用既有 governance.test.ts 追加；workbench 用既有 task-params/api/runner-dispatch 测试文件追加。
-- **全量门禁**：`pnpm test && pnpm typecheck && pnpm build`（新包被 workspace glob 自动纳入 -r 递归）。
+- **好测试**：只测外部行为（分区纯函数输出、spawn 后终态与产物、扫描结果），不测组件内部渲染细节（无 React 测试基建，UI 层验收 = vite build + UI Contract 对照）。
+- **新增用例分布**：
+  - task-params：COLLECTOR_SCENARIOS 含 rss 卡（1）；
+  - new-task 纯函数：getTaskParams rss 分支（换行解析/去注释/limit 缺省）（1-2）；
+  - 分区纯函数：五类目各一任务 → 五分区正确（1）；
+  - adoption.test.ts：A01 三断言 + A19 扫描（2-3）；
+  - A18 商品冒烟 e2e（1）。
+- **先例**：rss-e2e.test.ts（spawn 模式）、COLLECTOR_SCENARIOS includes 断言、parity 测试。
+- **全量门禁**：`pnpm test && pnpm typecheck && pnpm build`（build 覆盖 web 前端编译）；既有 194 用例零回退。
 
 ## Out of Scope
 
-- WC-AR-06 的全部内容：场景入口放开、来源类型/限制声明展示、A 用例固化为常规回归包。
-- 条目正文/附件抓取（需要时另立 web-scraper 任务）；RSS dry-run/preview 模式。
-- XML 解析库引入评估（正式化时再议）；真实公网 Feed 的长期漂移适配。
-- 递延项 N2（api-connector 预算定容修复）、N4、N5、N6。
-- 平台级 Feed 域名白名单配置面（PoC 语义 = 任务即白名单）。
-- DNS rebinding 防护（与既有爬虫一致的已声明限制）。
+- F6（firecrawl 快照布局地雷）修复——独立小批；商品面板渲染 manifest 卡；cninfo/api 补 manifest limitations 数据（下一批爬虫小改）。
+- RSS 预览模式、平台级 Feed 白名单配置面、UI 视觉改版（沿用既有设计语言）。
+- React 组件测试基建引入。
 
 ## Further Notes
 
-- 红队 KA1–KA5 与范围裁决（N1/N3 带入）已全部吸收：KA1→决策 3，KA2→决策 7，KA3→决策 6，KA4→决策 8，KA5→决策 2，N1/N3→决策 14。
-- 降级声明：本批红队为主代理内联执行（子代理两次 429 限流后被停止），对抗距离弱于结构性独立评审，DONE 总结将披露。
-- pnpm-workspace `crawlers/*` glob 自动纳入新包，无需改 workspace 配置；workbench 需 `pnpm install` 刷新 lockfile（新增 workspace 链接）。
+- 红队 KA1–KA5 与 C1–C5 全部吸收：KA1→决策 8、KA2→决策 5-6、KA3→决策 7、KA4→决策 9-10、KA5→决策 1-4。
+- UI Contract 待裁决四点（红队已给证据基础）：rss 表单字段面细节、分区空态/顺序、limitations 区块视觉、无预览场景 StageBar 形态。
+- 红队未实跑基线（只读约束）——ISSUES 切分前先跑一次全量门禁取新基线。
 
-## PRD Diff Gate（auto 模式，2026-10-15）
+## PRD Diff Gate（auto 模式，2026-10-16）
 
-相对 proposal.md 的增量/裁决清单（未重述双方一致项）：
+相对 proposal.md 的增量/裁决（未重述一致项）：
 
-1. **事件协议类型名裁决（决策 3）**：提案括号内 firecrawl 类型名清单为描述性举例（且与 firecrawl 实际代码不符——实际为 `scrape_failed` 而非 `failed`）；PRD 保留规范的规范内容（6 类协议 + reducer 可直接消费），类型名落定为 reducer 已消费方言。**分类：对不一致决策的细化裁决，非变更**——提案两句按字面互斥（红队 KA1 证明），裁决满足其目标句。自批准理由记录于此；如用户不认可可回退。
-2. SnapshotStorage 加法扩展 xml 字段（红队 KA2 条件，提案未预见的必要前置）——纯增量。
-3. 预算公式钉死：maxCalls=urls.length、重定向跳数不占全局配额、每 Feed 限 5 跳（提案开放问题落定，防 N2 复发）——纯增量。
-4. deadline-ms 定整任务级、默认 60000（开放问题落定）——纯增量。
-5. N1+N3 修复带入本批（提案逃生条款预先授权 + 红队认定 A10 阻塞）——提案内已授权的范围调整。
-6. 冻结样本 26+ 用例分布与 fixture 形态（本地 HTTP server + test/fixtures/*.xml）（开放问题落定）——纯增量。
-7. 场景入口"默认收起"落定为 COLLECTOR_SCENARIOS 零改动、UI 卡片留 WC-AR-06（开放问题落定）——纯增量。
-8. RSS 不支持 dry-run、workbench 忽略其 dryRun 标志（提案未提及）——纯增量。
-9. "URL 域白名单"语义 = 任务即白名单（≤5 显式批准 URL；采纳文档数据流声明"仅访问任务中批准的 Feed 域名"的直读）——纯增量澄清。
-10. A05 非 Feed 响应检测、A09/A12 断言形态具体化（提案约束段已列方向）——纯增量。
+1. **TaskList 分区补 product-price（开放问题 1 落定）**：提案将其列为开放问题（"红队核实"），红队裁定为既有缺陷必做——提案逃生条款预先授权。纯增量落定。
+2. **A18 断言层级收窄（决策 5 细化）**：「端到端不变」在决策 6（零改动四爬虫）约束下具体化为「采集链路不变 + 分析链路显式递延 F6」——两决策联立的必然推论（红队探针实证分析产物恒空）。**分类：约束下的具体化，非丢弃**；测试内留 TODO(F6) 防背书。突出展示于此，如用户不认可可回退为「修 F6 列入本批」。
+3. fixture 域名修正（httpbin/mysite → example 域）——纯增量（测试文件）。
+4. A01/A19 断言形态与 allowlist 清单、依赖名级基线（开放问题 4 落定）——纯增量。
+5. 表单字段面：urls 换行分隔 + 去 # 注释、limit 露出、deadlineMs 不露、场景固定名（开放问题 2 落定）——纯增量。
+6. 分区计算提为纯函数以便测试——纯增量。
+7. limitations 区块落点 = UniversalManifestCard（开放问题 3 落定；商品面板递延）——纯增量。
+8. A01/A19 落位 apps/workbench/test/adoption.test.ts——纯增量。
 
-无任何条目变更或丢弃 proposal.md 的已定决策；无需升级。
+无变更/丢弃提案已定决策；无需升级。
 
 ## GRILL 决议附录
 
-### Round 1（作者盲审子代理 9 包，主代理逐包核验后全采纳，2026-10-15）
+### Round 1（作者盲审子代理 8 包，主代理核验后全采纳，2026-10-16）
 
-主代理对两处新发现做了独立实证（evidence 路由只读 md/html；firecrawl engine 快照布局与消费端不一致）后采纳。无任何包与 proposal 已定决策冲突；无需升级。
+- **G1（Q1）SET_SCENARIO 改显式映射表**：shared 中 `SCENARIO_SOURCE_TYPES: Record<ScenarioId, SourceType>`（约 6 行纯加法），reducer 索引取值——Record 缺键即编译错，在类型层消灭「静默回落」这一类陷阱（非只修 rss 一例）；custom-request→api-connector 的既有隐式行为转显式。
+- **G2（Q2）空 urls 透传空数组**：不镜像 product 的样板回填（rss 无样板对应物，替用户指定白名单语义不可接受）；空数组落进既有错误文案「Feed URL 列表不能为空（1-5 个）」。limit 沿 cninfo limitText 先例：`trim() ? Number() : undefined` 原样透传，非法值（NaN/越界）交 validateRssParams 中文报错。
+- **G3（Q3）分区纯函数独立 ts 模块**：`views/` 下新建纯 ts（非 .tsx），签名 `partitionTasks(tasks): { preview: TaskRecord[]; byCategory: Record<TaskCategory, TaskRecord[]> }`——preview 分组一并入函数，TaskList 全部数据派生收敛为一次调用；不进 shared（避免 TaskRecord 依赖反向循环与视图逻辑错位）。
+- **G4（Q4）rss 卡字段级断言**：新独立用例钉住 PRD 决策 1 卡面（id/title「公开 RSS 资讯采集」/badge「只读 Feed · PoC」/category crawler/描述含「任务即白名单」）；既有 includes 断言不动。
+- **G5（Q5）A18 e2e 三缺口**：事件断言用测试内 `JSON.parse` 内联（不新增 firecrawl-scraper 依赖，与 G8 组合无联动）；快照断言按 F6 现状布局（顶层 `snap_*` 目录 ×9）+ `TODO(F6)` 注释——修复批改断言时测试显式红；`waitForTerminal` 复制不提取（两处各 10 行，间接成本高于收益）。另经核验：firecrawl 事件行全过 parseCrawlEvent、`done.summary.failed=0` → classifyDone `succeeded`，counts 恒 0 不做断言。
+- **G6（Q6）A19 扫描范围**：全部文本文件（含 .xml/.json fixtures——fixtures 正是可能藏真实端点处）；目录从仓库根动态发现 `**/test/**`（排除 node_modules/.git/data/out/dist——第七个包自动纳入）；删除 wttr.in 死条目（test/** 中只以无 scheme 裸串出现，带 scheme 提取永不命中；如需保留须注明「预置、当前无命中」）。
+- **G7（Q7）allowlist 规则化**（PRD 清单第一天就红的修正）：归一化（小写、去尾点）+ 后缀匹配（`.example`/`.example.com`/`.localhost`）+ IP 字面量解析豁免（点分/整数/十六进制/八进制统一 parse 后判回环/私网/0.0.0.0/公网边界段）+ 显式条目仅 6 个各带注释（purl.org/www.w3.org/api.firecrawl.dev/evil.com/11.0.0.1/172.15.0.1——全是 egress 门禁自身测试对象，永不请求）+ 无点非 IP token 忽略（模板串残片如 `feed`）。未触红队 kill 线（显式条目 6 ≤ 10）。
+- **G8（Q8）A01 依赖基线恢复全仓语义**（修正 PRD 决策 9 的静默收窄）：断言范围 = 全部 7 个 importers 的 deps∪devDeps 依赖名并集 ⊆ 内联基线集合（实测仅 17 名：workbench 的 hono/@hono/node-server/react/react-dom + 四包共享的 data-governance/@types/node/tsx/typescript + root 的 pnpm 基础上加入 rss-collector/firecrawl-scraper 等 workspace 名——以实现时实测清单为准写入测试）；来源读各 package.json（lockfile 格式随 pnpm 版本漂移）；存储内联 Set（新增合法依赖 = 测试文件里一行显式 diff，失败信息列新增名）。
 
-- **G1（R1-Q1）normalizeParams 增 rss 分支**（PRD 决策 13 的漏项，POST 创建链路）：钳制 name（缺省 `'RSS Feed 采集'`）、urls（字符串数组 trim+去空）、limit/deadlineMs/timeoutMs（number 透传，越界交 validateRssParams 拒绝）、未知字段丢弃，镜像 web-scraper 分支形态。
-- **G2（R1-Q2）/snapshot-content 增 xml 读取**：加法扩展——`format=xml` 显式请求，或 md/html 均不存在时回退读 content.xml；md/html 行为零变化。否则字段级证据指向的 XML 原文在工作台不可回看，击穿"可回验"核心主张。
-- **G3（R1-Q3）e2e 门禁豁免通道**：rss CLI 增 `RSS_ALLOW_PRIVATE_ORIGIN=1` 测试豁免（镜像 cninfo 先例，仅绕过私网/回环判定，协议白名单仍生效）；workbench 的 validateRssParams 不加豁免；workbench e2e 直驱 TaskQueue + makeCrawlerRunner 真实 spawn rss CLI（豁免经 env 继承）；保留"无豁免时 CLI 拒绝私网"负向用例。
-- **G4（R1-Q4）快照布局钉死 + firecrawl 地雷只标注不修**：RSS 快照落 `outDir/snapshots/<snapshotId>/{content.xml, metadata.json}`（`new SnapshotStorage(path.join(outDir, 'snapshots'))`），records/evidences/evidence.sqlite/manifest 在 outDir 根，manifest.files 增 `snapshotsDir: 'snapshots/'`。已实证 firecrawl engine 写顶层而消费端读 `snapshots/` 子目录（engine.ts:19 vs main.ts:199）——**既有地雷，本批不修**（不改既有爬虫行为），记入 handoff 递延。
-- **G5（R1-Q5）事件分界**：按"是否取得 HTTP 响应"分界——门禁拦截/网络错/超时/超跳数 → `queryError`（target=URL）；取得响应但不可用（404/500/A05 非 Feed）→ `file status='failed'`（code=域名、name 无标题时用 host、reason 注明）；成功落盘 → `file status='downloaded'`。每 Feed 拉取前发 `company`（index/total/code=host/name=host，不猜标题）；`start` 恒带 `dryRun:false`。
-- **G6（R1-Q6）参数边界一揽子**：urls trim 后精确重复 → 校验报错拒绝（CLI 同）；limit=每 Feed 条目上限；spawn 仅当 params.deadlineMs 定义时传 `--deadline-ms`（缺省 CLI 默认 60s），与 timeoutMs 硬熔断双层独立不自动 clamp；创建 rss 任务时 dryRun 一律钳制落库 false（标题/classifyDone/clearPreviews 三处免特例）。
-- **G7（R1-Q7）recordId 与质量口径**：前像优先级 link（绝对化）> guid > 条目原文切片；`recordId = 'rss_' + sha256(前像)`（hex 不截断）；同任务重复 recordId 保留多条（limitations 声明"跨 Feed 转载不去重"）。qualityStatus `'valid' | 'missing_field'`：title 与 link 均非空 → valid，否则 missing_field + `missingReason='FIELD_NOT_IN_FEED:<字段>'`；published/summary 缺失只走字段级 null+missing_reason 不降级；manifest 直传计数，不调 calculateQualityMetrics（避 missing_price 语义污染）。
-- **G8（R1-Q8）解析器输入假设**：判型与子标签只认无前缀小写字面标签（`<rss>`/`<feed>`，其余整 Feed failed）；带前缀标签（atom:link/dc:date）按未知标签走漂移路径（字段 null+missing_reason）；Atom link 取第一个 rel 缺省或 alternate 的 href，无匹配取第一个 link，全无 → null；published 只认 RSS pubDate/Atom published，**不回退 updated**；FieldEvidence 的定位 snippet 用**解码前原文切片**（value 才是解码后文本），保证 locateSnippet 逐字命中。
-- **G9（R1-Q9）CLI 契约**：`summary.failed > 0` → exit 1（对齐 cninfo/api-connector）；默认（非 --json）模式镜像 api-connector textReporter：逐 Feed 一行 + 结尾摘要，断言无 JSON 行泄漏；逐 Feed 串行、不加 sleep 参数。
+### Round 2（主代理 3 包，2026-10-16）
 
-### Round 2（主代理 3 包，2026-10-15）
+- **G9 场景卡顺序**：rss 卡插在 cninfo-reports 之后（crawler 组内第 2 位：商品样板 → 财报固化 → RSS 只读新渠道），weather/custom-request 不动。
+- **G10 A19 扫描排除范围钉死**：`**/test/**` 且排除 node_modules/.git/data/out/dist/.flow（.flow 流程文档含真实域名示例文本，非测试对象）。
+- **G11 RssPicker 输入边界**：limit 输入镜像 cninfo limitText 形态（trim 空→undefined；非空→Number 透传）；urls 文本域 placeholder 给 example 域示例；错误展示只在 submit 后（与 product 先例同时机，不做实时校验）。
 
-Round 1 后残余缺口的最后落定：
-
-- **G10 截断/空 Feed/条目语义**：截断样本（A07）= 解析器丢弃无闭合标签的尾部不完整条目、保留完整条目、快照 metadata.truncated=true、manifest limitations 注明"Feed 可能截断"；合法空 Feed（A06）= 该 Feed `file downloaded`（matched=0 不是失败）；条目按原文出现顺序、`--limit` 截前 N（每 Feed 口径，G6）；done.summary.bytes = 各 Feed 原文字节总和。
-- **G11 事件收尾协议**：校验期失败（参数非法/私网 URL）→ 仅发 `error` 事件 + exit 非零，不发 done（镜像 cninfo/api-connector）；运行期单 Feed 失败不中断后续 Feed，最终必发 done；运行期致命错误（outDir 写失败等）→ error + exit 1，不再发 done。
-- **G12 deadline 机制与覆盖语义**：deadline 用 AbortController 实现——到点即 abort 进行中的 fetch（该 Feed 发 queryError，reason='DEADLINE_EXCEEDED'）并阻止启动后续 Feed（未启动的同样 queryError），最终正常发 done 收尾；`--urls` 逗号 join 透传（合法 URL 不含字面逗号，安全）；A16 覆盖语义 = 每次运行快照 id 唯一不覆盖，outDir 级产物按单任务目录语义覆盖写，workbench 场景 taskId 隔离天然满足。
-
-**GRILL 收敛**：Round 2 后无新增开放问题，2 轮收敛。
-
-### 评审周期 1 补记（2026-10-16，REVIEW F1/F2 处置）
-
-- **A13 裁决（修正 Diff Gate 遗记）**：Round 1 后的 PRD 用例分布确实遗漏了 proposal 决策 5 验收枚举中的「取消（A13）」且未在 Diff Gate 记录——属静默丢弃，评审判 blocking 成立。处置：**补用例而非书面豁免**——`apps/workbench/test/rss-e2e.test.ts` 新增「运行中取消」用例（挂起 Feed → 等 start 落日志 → queue.cancel → 终态 canceled、无 done 事件、终态不被改写）。
-- **F2 裁决（决策 10 与 G4 冲突的正式裁决）**：决策 10 指名的 `createAndSaveDeliveryManifest` 无法表达 G4 要求的 `files.snapshotsDir` 与 Feed 级 sourceSummary 计数（helper 的 files 映射与 succeeded/failed 推导固定）。**裁决：以 G4 为准，manifest 手工构造**（镜像 firecrawl pipeline 的既有先例），verifyDeliveryPackage 兼容性由测试证明；helper 扩展留待正式化阶段（递延）。
+**GRILL 收敛**：Round 2 后无新增开放问题（StageBar 形态、分区空态/顺序、limitations 区块视觉、表单字段细节四点按提案决策 7 留 UI-GATE 裁决），2 轮收敛。

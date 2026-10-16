@@ -115,7 +115,16 @@ export function summarizeTask(params: TaskParams, dryRun: boolean): string {
   return summarizeCninfoTask(params, dryRun);
 }
 
-export type ScenarioId = 'cninfo-reports' | 'product-price-comparison' | 'weather-api' | 'custom-request';
+export type ScenarioId = 'cninfo-reports' | 'product-price-comparison' | 'weather-api' | 'custom-request' | 'rss';
+
+/** 场景 → 数据源显式映射（G1）：Record 缺键即编译错，消灭 reducer 的静默回落陷阱 */
+export const SCENARIO_SOURCE_TYPES: Record<ScenarioId, SourceType> = {
+  'cninfo-reports': 'cninfo',
+  'product-price-comparison': 'web-scraper',
+  'weather-api': 'api-connector',
+  'custom-request': 'api-connector',
+  rss: 'rss',
+};
 
 export interface ScenarioMeta {
   id: ScenarioId;
@@ -126,6 +135,9 @@ export interface ScenarioMeta {
 }
 
 export type TaskCategory = 'cninfo' | 'product-price' | 'weather' | 'api' | 'rss';
+
+/** 任务列表分区/tab 的固定迭代序（UI 合同裁决②：类型声明序，单一事实源防第七类来源再漏） */
+export const CATEGORY_ORDER: readonly TaskCategory[] = ['cninfo', 'product-price', 'weather', 'api', 'rss'];
 
 export function getTaskCategory(params: TaskParams): TaskCategory {
   if (params.sourceType === 'web-scraper') {
@@ -173,6 +185,13 @@ export const COLLECTOR_SCENARIOS: readonly ScenarioMeta[] = [
     badge: '固化爬虫',
     category: 'crawler',
     description: '官方信息披露平台，批量下载上市公司官方年报、半年报与季报 PDF 原件。',
+  },
+  {
+    id: 'rss',
+    title: '公开 RSS 资讯采集',
+    badge: '只读 Feed · PoC',
+    category: 'crawler',
+    description: '粘贴 1-5 个公开 RSS/Atom Feed URL 直接开始采集。任务即白名单、不抓正文，条目元数据带原文证据落盘。',
   },
   {
     id: 'weather-api',

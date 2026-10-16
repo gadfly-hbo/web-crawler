@@ -84,13 +84,13 @@ test('FirecrawlAdapter: 对接本地 Mock HTTP Server 验证协议与错误归�
     });
 
     // 1. 成功请求
-    const successRes = await adapter.scrape({ url: 'https://mysite.com/item/1' });
+    const successRes = await adapter.scrape({ url: 'https://mysite.example.com/item/1' });
     assert.equal(successRes.success, true);
     assert.equal(successRes.statusCode, 200);
     assert.equal(successRes.markdown, '# Remote Scraped Title');
 
     // 2. 404 错误
-    const failRes = await adapter.scrape({ url: 'https://mysite.com/not-found' });
+    const failRes = await adapter.scrape({ url: 'https://mysite.example.com/not-found' });
     assert.equal(failRes.success, false);
     assert.equal(failRes.statusCode, 404);
     assert.equal(failRes.error?.code, 'PAGE_NOT_FOUND');

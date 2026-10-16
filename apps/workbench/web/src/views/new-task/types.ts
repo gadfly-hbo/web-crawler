@@ -50,6 +50,8 @@ export interface NewTaskState {
   productBaselineBrand: string;
   productApiKey: string;
   productBaseUrl: string;
+  rssUrlsText: string;
+  rssLimitText: string;
   errors: string[];
   previewTask: TaskRecord | null;
 }
@@ -65,6 +67,8 @@ export type NewTaskAction =
   | { type: 'SET_PRODUCT_API_KEY'; payload: string }
   | { type: 'SET_PRODUCT_BASE_URL'; payload: string }
   | { type: 'LOAD_PRODUCT_SAMPLE' }
+  | { type: 'SET_RSS_URLS_TEXT'; payload: string }
+  | { type: 'SET_RSS_LIMIT_TEXT'; payload: string }
   | { type: 'SET_MODE'; payload: 'company' | 'industry' }
   | { type: 'SET_COMPANIES'; payload: StockEntry[] }
   | { type: 'ADD_COMPANY'; payload: StockEntry }

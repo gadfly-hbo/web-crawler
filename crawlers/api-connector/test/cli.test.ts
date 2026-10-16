@@ -16,7 +16,7 @@ function validConfig(): ApiConnectorParams {
     sourceType: 'api-connector',
     name: 'CLI测试数据源',
     request: {
-      url: 'https://httpbin.org/get?page={{page}}',
+      url: 'https://httpbin.example.com/get?page={{page}}',
       method: 'GET',
     },
     pagination: {

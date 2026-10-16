@@ -1,8 +1,8 @@
 import {
   DEFAULT_SLEEP_MS,
+  SCENARIO_SOURCE_TYPES,
   createWeatherApiParams,
   type ApiConnectorParams,
-  type SourceType,
   type TaskParams,
 } from '../../../../shared/task-params';
 import { ALL_TYPES, type ApiConnectorFormState, type NewTaskAction, type NewTaskState } from './types';
@@ -72,6 +72,8 @@ export const initialNewTaskState: NewTaskState = {
       return '';
     }
   })(),
+  rssUrlsText: '',
+  rssLimitText: '',
   errors: [],
   previewTask: null,
 };
@@ -91,6 +93,20 @@ export function getTaskParams(state: NewTaskState): TaskParams {
       baselineBrand: state.productBaselineBrand || 'Brand A',
       apiKey: state.productApiKey.trim() || undefined,
       baseUrl: state.productBaseUrl.trim() || undefined,
+    };
+  }
+
+  if (state.scenario === 'rss') {
+    // G2：空数组透传（不回填样板），由 validateRssParams 报「Feed URL 列表不能为空」
+    const urls = state.rssUrlsText
+      .split('\n')
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0 && !u.startsWith('#'));
+    return {
+      sourceType: 'rss',
+      name: '公开 RSS 资讯采集',
+      urls,
+      limit: state.rssLimitText.trim() ? Number(state.rssLimitText) : undefined,
     };
   }
 
@@ -150,14 +166,12 @@ export function newTaskReducer(state: NewTaskState, action: NewTaskAction): NewT
   switch (action.type) {
     case 'SET_SCENARIO': {
       const scenario = action.payload;
-      let sourceType: SourceType = 'cninfo';
-      if (scenario === 'product-price-comparison') {
-        sourceType = 'web-scraper';
-      } else if (scenario !== 'cninfo-reports') {
-        sourceType = 'api-connector';
-      }
-      return { ...state, scenario, sourceType, errors: [] };
+      return { ...state, scenario, sourceType: SCENARIO_SOURCE_TYPES[scenario], errors: [] };
     }
+    case 'SET_RSS_URLS_TEXT':
+      return { ...state, rssUrlsText: action.payload, errors: [] };
+    case 'SET_RSS_LIMIT_TEXT':
+      return { ...state, rssLimitText: action.payload, errors: [] };
     case 'SET_PRODUCT_URLS_TEXT':
       return { ...state, productUrlsText: action.payload, errors: [] };
     case 'SET_PRODUCT_MOCK':
