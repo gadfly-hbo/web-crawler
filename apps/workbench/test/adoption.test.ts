@@ -108,7 +108,8 @@ test('A19: 无隐式外呼——test 目录全部文本文件的主机名都在 
     if (h.startsWith('[')) return ipLiteralAllowed(h); // IPv6 字面量判类（[::1]/[fe80::] 放行，[2600::] 拒绝）
     if (h === '') return false;
     if (!h.includes('.')) {
-      // 无点 token：纯数字（如 2130706433）是 IP 编码 fixture；字母 token（如模板串残片 feed）非主机
+      // 无点 token：数字/十六进制编码先经 IP 判类（R2-1 修复：134744072=8.8.8.8 应拒绝）；字母 token（模板串残片）非主机
+      if (/^\d+$/.test(h) || /^0x[0-9a-f]+$/i.test(h)) return ipLiteralAllowed(h);
       return true;
     }
     if (isNumericLiteral(h)) return ipLiteralAllowed(h); // 127.0.0.1/0177.0.0.1/0x7f000001 等判类，8.8.8.8 拒绝
@@ -121,12 +122,20 @@ test('A19: 无隐式外呼——test 目录全部文本文件的主机名都在 
   };
 
   // 本测试文件也在扫描范围内：allowlist 条目以纯字符串出现、无 scheme 前缀，天然不被提取
-  const textExtensions = new Set(['.ts', '.tsx', '.mjs', '.js', '.xml', '.json', '.html', '.css', '.md', '.txt']);
+  const textExtensions = new Set([
+    '.ts', '.tsx', '.mjs', '.js', '.xml', '.json', '.html', '.css', '.md', '.txt',
+    '.yaml', '.yml', '.csv', '.snap', // F-2 补齐：常见文本 fixture 前向覆盖
+  ]);
   const testFiles = await walk(repoRoot, (rel) => {
     const segs = rel.split(path.sep);
     return segs.includes('test') && textExtensions.has(path.extname(rel));
   });
   assert.ok(testFiles.length >= 30, `扫描应覆盖全部包的 test 目录，实得 ${testFiles.length} 个文本文件`);
+  // G4：扩展名补齐的生效佐证——新增文本类型 fixture 必须进入扫描基数
+  assert.ok(
+    testFiles.some((f) => f.endsWith(path.join('fixtures', 'a19-scan-fixture.yaml'))),
+    'a19-scan-fixture.yaml 应被扫描基数包含（.yaml 扩展名生效的直接证据）',
+  );
 
   const violations: string[] = [];
   for (const file of testFiles) {

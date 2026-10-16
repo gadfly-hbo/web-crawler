@@ -234,8 +234,8 @@ test('rss 任务参数校验：合法通过；私网/重复/超 5 个/limit 越�
 
 test('rss 任务摘要与类目', () => {
   const p = { sourceType: 'rss' as const, name: '行业资讯', urls: ['https://a.example.com/f'] };
-  assert.equal(summarizeTask(p, false), 'RSS 采集 · 行业资讯');
-  assert.equal(summarizeTask(p, true), 'RSS 采集 · 行业资讯', 'rss 不支持 dry-run，标题不带预览前缀');
+  assert.equal(summarizeTask(p, false), 'RSS 采集 · 行业资讯（1 Feed）');
+  assert.equal(summarizeTask(p, true), 'RSS 采集 · 行业资讯（1 Feed）', 'rss 不支持 dry-run，标题不带预览前缀');
   assert.equal(getTaskCategory(p), 'rss');
   assert.ok(CATEGORY_LABELS.rss.label.length > 0);
 });

@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>递延项收敛批 · UI Contract 增量补记原型 — 商品任务 manifest 卡（S5）</title>
+<style>
+/* ===== tokens.css 逐字内联（源：apps/workbench/web/src/styles/tokens.css，值不改名不改动）===== */
+:root {
+  --bg: #eceae5;
+  --shell: #f7f6f3;
+  --surface: #ffffff;
+  --surface-2: #f4f3ef;
+  --soft: #f7f6f2;
+  --border: #e5e2dc;
+  --border-strong: #d8d3cb;
+  --text: #1d2027;
+  --text-2: #6f7480;
+  --text-3: #8a8076;
+  --accent: #e8643a;
+  --accent-strong: #bf4927;
+  --accent-soft: #fff1e8;
+  --accent-line: #e8c1b4;
+  --navy: #263442;
+  --navy-soft: #edf3f5;
+  --navy-ink: #496271;
+  --primary: #e8643a;
+  --ok: #176247;
+  --ok-soft: #def3e9;
+  --ok-line: #bfddcf;
+  --warn: #855211;
+  --warn-soft: #fff1d6;
+  --warn-line: #f0dfc2;
+  --fail: #952f2f;
+  --fail-soft: #ffe5e5;
+  --fail-line: #f3caca;
+  --queue: #6d5bd0;
+  --queue-ink: #5b48c0;
+  --queue-soft: #efecfb;
+  --queue-line: #d9d2f5;
+  --dot-amber: #d28c2d;
+  --dot-green: #3e9a73;
+  --dot-gray: #aaaaaa;
+  --dot-red: #c84c4c;
+
+  --rounded-base: 14px;
+  --rounded-sm: 8px;
+  --rounded-pill: 999px;
+
+  --sp-xs: 4px;
+  --sp-sm: 6px;
+  --sp-md: 10px;
+  --sp-lg: 14px;
+  --sp-xl: 22px;
+
+  --shadow-flat: 0 3px 12px rgba(40, 36, 30, 0.04);
+  --shadow-float: 0 18px 48px rgba(35, 35, 30, 0.12);
+  --focus-ring: 3px solid rgba(232, 100, 58, 0.28);
+
+  --font-sans: Inter, -apple-system, 'SF Pro Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* ===== app.css 组件样式子集（源：apps/workbench/web/src/styles/app.css，值逐字复制）===== */
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  padding: 0 0 80px;
+}
+.view { max-width: 1240px; width: 100%; margin: 0 auto; padding: 24px 32px 64px; }
+.view-title { font-size: 17px; font-weight: 600; line-height: 1.4; margin: 0 0 var(--sp-xs); }
+.view-desc { color: var(--text-2); margin: 0 0 var(--sp-lg); }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--rounded-base); padding: var(--sp-lg) 16px;
+  margin-bottom: var(--sp-lg); box-shadow: var(--shadow-flat);
+}
+.card-h { font-size: 13.5px; font-weight: 600; margin: 0 0 var(--sp-md); }
+.eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.13em;
+  color: var(--text-3); text-transform: uppercase; margin: 0 0 var(--sp-xs);
+}
+.small { font-size: 11.5px; color: var(--text-2); }
+.meta { font-size: 10.5px; color: var(--text-3); }
+.mono { font-family: var(--font-mono); }
+.btn {
+  border: 1px solid transparent; border-radius: var(--rounded-sm); cursor: pointer;
+  font-size: 13px; padding: var(--sp-sm) var(--sp-lg); font-family: inherit;
+}
+.btn:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--accent-strong); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+.btn-secondary:hover { background: var(--surface-2); }
+.btn-ghost { background: var(--surface); color: var(--text-2); border-color: var(--border); }
+.btn-sm { padding: 2px var(--sp-md); font-size: 11.5px; }
+.chip {
+  display: inline-flex; align-items: center; gap: var(--sp-xs);
+  border-radius: var(--rounded-pill); padding: 1px var(--sp-md);
+  font-size: 11.5px; border: 1px solid transparent; white-space: nowrap;
+}
+.chip-ok { background: var(--ok-soft); color: var(--ok); border-color: var(--ok-line); }
+.chip-accent { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent-line); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.dot-ok { background: var(--dot-green); }
+.tag-badge {
+  font-size: 10px; padding: 1px 5px; border-radius: var(--rounded-sm);
+  margin-right: 6px; display: inline-block; font-weight: 500; vertical-align: middle;
+}
+
+/* ===== UniversalManifestCard 内联样式复刻（沿 .flow/ui/index.html 同款 umc 类，值不改）===== */
+.umc { border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; background: #f8fafc; margin-bottom: 16px; }
+.umc-headrow { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.umc-title { font-weight: 600; font-size: 14px; color: #1e293b; }
+.umc-sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+.umc-shabadge {
+  font-size: 11px; padding: 2px 8px; background: #dcfce7; color: #166534;
+  border-radius: 4px; font-weight: 600;
+}
+.umc-actions { display: flex; gap: 8px; }
+.umc-export {
+  font-size: 12px; padding: 5px 12px; background: #b44626; border-color: #b44626;
+  color: #fff; text-decoration: none; border-radius: 8px; cursor: pointer; border: 1px solid transparent; font-family: inherit;
+}
+.umc-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 12px; }
+.umc-metrics .k { font-size: 11px; color: #64748b; }
+.umc-metrics .v { font-size: 13px; font-weight: 700; color: #0f172a; }
+.umc-metrics .v.ok { color: #16a34a; }
+.umc-metrics .v.mono { font-family: var(--font-mono); font-size: 12px; }
+.umc-limitations { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+.umc-limitations .h { font-weight: 600; margin-bottom: 6px; color: #334155; font-size: 12.5px; }
+.umc-limitations ul { margin: 0; padding-left: 18px; font-size: 12px; color: #475569; line-height: 1.75; }
+
+/* ===== ProductPriceDashboard 内联样式复刻（源组件 inline style → class 化，值不改）===== */
+.ppd { margin-top: 20px; }
+.ppd-headrow { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+.ppd-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ppd-export {
+  font-size: 13px; padding: var(--sp-sm) var(--sp-lg); background: #b44626; border-color: #b44626;
+  color: #fff; text-decoration: none; border-radius: var(--rounded-sm); cursor: pointer;
+  border: 1px solid transparent; font-family: inherit;
+}
+.ppd-mpanel { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; background: #f8fafc; margin-bottom: 20px; }
+.ppd-mpanel .t { font-weight: 600; font-size: 13px; color: #1e293b; }
+.ppd-shabadge {
+  font-size: 11px; padding: 2px 6px; background: #dcfce7; color: #166534;
+  border-radius: 4px; font-weight: 600;
+}
+.ppd-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 10px; }
+.ppd-metrics .k { font-size: 11px; color: #64748b; }
+.ppd-metrics .v { font-size: 13px; font-weight: 700; color: #0f172a; }
+.ppd-metrics .v.ok { color: #16a34a; }
+.ppd-metrics .v.mono { font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+.ppd-table { width: 100%; text-align: left; border-collapse: collapse; margin-bottom: 20px; }
+.ppd-table th { padding: 8px 12px; border-bottom: 2px solid #e0e0e0; }
+.ppd-table td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+.ppd-caveats { background: #f8f9fa; border-left: 4px solid #b44626; padding: 12px 16px; border-radius: 4px; }
+.ppd-caveats .h { font-weight: 600; font-size: 13px; margin-bottom: 4px; color: #333; }
+.ppd-caveats ul { margin: 0; padding-left: 18px; font-size: 12px; color: #555; line-height: 1.6; }
+
+/* ===== G6 等价性对照表（合同标注，非产品 UI）===== */
+.g6table { width: 100%; text-align: left; border-collapse: collapse; font-size: 12.5px; }
+.g6table th { padding: 8px 12px; border-bottom: 2px solid var(--border-strong); background: var(--surface-2); }
+.g6table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.g6table .same { color: var(--text-2); }
+.g6table .delta { color: var(--accent-strong); font-weight: 600; }
+
+/* ===== 原型批注层（非产品 UI；navy 系 token，便于一眼区分）===== */
+.proto-head { background: var(--navy); color: #f7f6f3; padding: 26px 32px 22px; }
+.proto-head h1 { margin: 0 0 6px; font-size: 19px; font-weight: 600; }
+.proto-head p { margin: 2px 0; font-size: 12.5px; color: #c9d4dc; }
+.proto-toc { max-width: 1240px; margin: 18px auto 0; padding: 0 32px; display: flex; gap: 8px; flex-wrap: wrap; }
+.proto-toc a {
+  font-size: 12px; color: var(--navy-ink); text-decoration: none;
+  border: 1px solid var(--border-strong); background: var(--surface);
+  border-radius: var(--rounded-pill); padding: 4px 12px;
+}
+.proto-toc a:hover { border-color: var(--accent-line); color: var(--accent-strong); }
+.proto-sec { max-width: 1240px; margin: 26px auto 0; padding: 0 32px; }
+.proto-sec-h {
+  background: var(--navy); color: #f7f6f3; border-radius: var(--rounded-sm) var(--rounded-sm) 0 0;
+  padding: 9px 16px; font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.proto-sec-h .refs { font-size: 11px; font-weight: 400; color: #a9bcc9; }
+.proto-frame {
+  border: 1px solid var(--border); border-top: none; border-radius: 0 0 var(--rounded-base) var(--rounded-base);
+  background: var(--shell); padding: 10px 0 24px;
+}
+.note {
+  border: 1px dashed var(--navy-ink); background: var(--navy-soft); color: var(--navy-ink);
+  font-size: 12px; border-radius: var(--rounded-sm); padding: 8px 12px; margin: 12px 32px;
+}
+.note b { font-weight: 600; }
+.omit {
+  border: 1px dashed var(--navy-ink); background: var(--navy-soft); color: var(--navy-ink);
+  font-size: 12px; border-radius: var(--rounded-sm); padding: 8px 12px; margin-bottom: 20px;
+}
+.pin {
+  display: inline-block; font-size: 10.5px; background: var(--navy); color: #f7f6f3;
+  border-radius: var(--rounded-pill); padding: 1px 9px; margin-left: 6px; vertical-align: middle; font-weight: 500;
+}
+.pin.orange { background: var(--accent-strong); }
+.state-label {
+  font-size: 11px; color: var(--text-3); letter-spacing: 0.08em; text-transform: uppercase;
+  margin: 22px 32px 8px; font-weight: 700;
+}
+.proto-foot { max-width: 1240px; margin: 40px auto 0; padding: 0 32px; font-size: 11.5px; color: var(--text-2); }
+.coderef {
+  font-family: var(--font-mono); font-size: 11px; background: var(--surface-2); border: 1px solid var(--border-strong);
+  border-radius: var(--rounded-sm); padding: 8px 12px; margin: 10px 0 4px; white-space: pre; overflow-x: auto; color: var(--navy-ink);
+}
+</style>
+</head>
+<body>
+
+<header class="proto-head">
+  <h1>递延项收敛批 · UI Contract 增量补记 — 商品任务详情 manifest 卡（S5）</h1>
+  <p>Verdict：PASS ｜ 阶段：dev-flow UI-GATE 增量补记（PRD 决策 5）｜ 起草：2026-10-16 ｜ 基线：.flow/ui-contract.md（S4 · 裁决③ · N3 · §4 术语表，append-only）</p>
+  <p>视觉依据：apps/workbench/web/src/styles/tokens.css + app.css（token 值逐字内联）＋ UniversalManifestCard / ProductPriceDashboard 组件 inline style 手工复刻</p>
+  <p>⚠️ Dashboard 品牌表数值与 manifest 指标（v1.0-m9x2k4ab / 9 条 / 88.9% / 100.0%）为<b>合成数据</b>（9 条对齐 PRD 决策 2 A18 断言 totalRecords === 9）；限制声明 4 条为 <span class="mono">crawlers/firecrawl-scraper/src/analyzer.ts:158-163</span> 真实源码字符串——真实形态以 firecrawl pipeline 落盘产物为准</p>
+</header>
+
+<nav class="proto-toc">
+  <a href="#s1">§1 态 A：增量形态（Dashboard 之后渲染卡）</a>
+  <a href="#s2">§2 态 B：静默缺席 ＋ G6 等价对照</a>
+</nav>
+
+<!-- ============ §1 态 A：product-price ∧ succeeded ============ -->
+<section class="proto-sec" id="s1">
+  <div class="proto-sec-h">§1 — 态 A：商品任务（succeeded）详情——ProductPriceDashboard 之后渲染 UniversalManifestCard<span class="refs">PRD 决策 5 ｜ 提案决策 2 ｜ GRILL G6 ｜ 裁决③（区块形态）</span></div>
+  <div class="proto-frame">
+
+    <div class="state-label">状态 A：product-price ∧ succeeded ∧ 有 manifest（analyze:true 且 succeeded&gt;0）</div>
+    <div class="view" style="padding-bottom: 0;">
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px;">
+        <h1 class="view-title" style="margin: 0;">商品价格分析 · 品牌A/B/C商品标价中位数对比样板</h1>
+        <span class="tag-badge chip-accent" style="font-size: 11px; padding: 2px 8px;">🏷️ 商品标价分析</span>
+      </div>
+      <p class="view-desc">采集任务 · 创建于 2026/10/16 10:24</p>
+
+      <div class="omit">（顶部状态卡 / 预览确认卡 / FailureList —— 既有内容，本批零改动，原型略。右栏「📟 运行日志」同略。）</div>
+
+      <!-- 既有 ProductPriceDashboard（本批零改动；此处摘要复刻：卡头 + 内嵌 manifest 面板 + 品牌表 + 口径边界，价格带/样本明细略） -->
+      <div class="card ppd">
+        <span class="pin">既有 ProductPriceDashboard · 零改动</span>
+        <div class="eyebrow">业务样板分析成果 · 标准化交付与证据闭环</div>
+        <div class="ppd-headrow">
+          <h3 class="card-h" style="margin: 0;">📊 品牌标价中位数与价格带对比看板</h3>
+          <div class="ppd-actions">
+            <button type="button" class="ppd-export" title="包含 SHA-256 签名、schema、quality report、records 与证据索引的解耦自包含交付包">📦 导出标准化交付包 (ZIP)</button>
+            <button type="button" class="btn btn-secondary" style="font-size: 13px;">📥 导出 CSV</button>
+            <button type="button" class="btn btn-secondary" style="font-size: 13px;">📥 导出 JSON</button>
+          </div>
+        </div>
+
+        <div class="ppd-mpanel">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 16px;">🛡️</span>
+              <span class="t">标准化交付资产规范 (Delivery Manifest v1.0.0)</span>
+              <span class="ppd-shabadge">SHA-256 签名完备</span>
+            </div>
+            <button type="button" class="btn btn-secondary" style="font-size: 11px; padding: 3px 8px;">查看交付资产规格与指纹 ▼</button>
+          </div>
+          <div class="ppd-metrics">
+            <div>
+              <div class="k">数据资产版本</div>
+              <div class="v mono">v1.0-m9x2k4ab</div>
+            </div>
+            <div>
+              <div class="k">有效样本率</div>
+              <div class="v">88.9%</div>
+            </div>
+            <div>
+              <div class="k">原文证据覆盖率</div>
+              <div class="v ok">100.0%</div>
+            </div>
+            <div>
+              <div class="k">下游解耦兼容性</div>
+              <div class="v" style="font-size: 12px; font-weight: 400; color: #334155;">Parquet / DuckDB / JSONL</div>
+            </div>
+          </div>
+        </div>
+
+        <table class="ppd-table">
+          <thead>
+            <tr>
+              <th>品牌</th><th>有效样本</th><th>缺失样本</th><th>标价中位数 (¥)</th><th>标价均值 (¥)</th><th>价格区间</th><th>相对基准中位数</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="font-weight: 600;">Brand A <span class="chip chip-ok" style="margin-left: 6px; font-size: 11px;">基准</span></td>
+              <td>3</td><td>0</td>
+              <td style="font-weight: 700; color: #b44626;">¥329</td>
+              <td>¥322</td>
+              <td style="color: #666;">¥199 ~ ¥399</td>
+              <td><span style="color: #888;">-</span></td>
+            </tr>
+            <tr>
+              <td style="font-weight: 600;">Brand B</td>
+              <td>2</td><td style="color: #b44626;">1</td>
+              <td style="font-weight: 700; color: #b44626;">¥389</td>
+              <td>¥384</td>
+              <td style="color: #666;">¥289 ~ ¥459</td>
+              <td><span style="font-weight: 500; color: #b44626;">+18.2%</span></td>
+            </tr>
+            <tr>
+              <td style="font-weight: 600;">Brand C</td>
+              <td>3</td><td>0</td>
+              <td style="font-weight: 700; color: #b44626;">¥299</td>
+              <td>¥296</td>
+              <td style="color: #666;">¥159 ~ ¥399</td>
+              <td><span style="font-weight: 500; color: #267b46;">-9.1%</span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="omit" style="margin-bottom: 20px;">（📈 整体价格分布带 / 🔬 商品样本明细与证据下钻 / EvidenceDrawer —— 既有内容，本批零改动，原型略）</div>
+
+        <div class="ppd-caveats">
+          <div class="h">⚠️ 业务解释与口径边界</div>
+          <ul>
+            <li>网页标价不等于最终成交价，亦不包含优惠券、会员折扣或满减促销。</li>
+            <li>采集样本仅代表本次采集页面，不等于全网全渠道全量商品。</li>
+            <li>未进行跨品牌完全同款对标匹配，标价差异受配置与规格影响。</li>
+            <li>数据严禁直接推导为销量、市场占有率或降价策略。</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ===== S5 本批增量：UniversalManifestCard 原样实例 ===== -->
+      <div class="umc">
+        <span class="pin orange">S5 · 本批新增（唯一 UI 增量）</span>
+        <div class="umc-headrow">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 18px;">🛡️</span>
+            <div>
+              <div class="umc-title">标准化交付资产规范 (Delivery Manifest v1.0.0)</div>
+              <div class="umc-sub">由统一底座 data-governance 自动签发 · 全文件 SHA-256 防篡改</div>
+            </div>
+            <span class="umc-shabadge">SHA-256 签名已就绪</span>
+          </div>
+          <div class="umc-actions">
+            <button type="button" class="umc-export" title="一键下载包含 manifest.json、数据、指纹与元数据的解耦标准交付包">📦 导出标准化交付包 (ZIP)</button>
+            <button type="button" class="btn btn-secondary" style="font-size: 12px; padding: 5px 10px;">查看数据指纹 ▼</button>
+          </div>
+        </div>
+
+        <div class="umc-metrics">
+          <div>
+            <div class="k">数据资产版本</div>
+            <div class="v mono">v1.0-m9x2k4ab</div>
+          </div>
+          <div>
+            <div class="k">采集产出总数</div>
+            <div class="v">9 条</div>
+          </div>
+          <div>
+            <div class="k">有效样本率</div>
+            <div class="v ok">88.9%</div>
+          </div>
+          <div>
+            <div class="k">生成引擎</div>
+            <div class="v" style="font-size: 12px; font-weight: 400; color: #334155;">web-crawler/firecrawl-scraper</div>
+          </div>
+        </div>
+
+        <div class="umc-limitations">
+          <div class="h">⚠️ 限制声明 (manifest limitations)<span class="pin">真实文案 · analyzer.ts:158-163</span></div>
+          <ul>
+            <li>网页标价不等于最终成交价，亦不包含优惠券、会员折扣或满减促销。</li>
+            <li>采集样本仅代表本次采集页面，不等于全网全渠道全量商品。</li>
+            <li>未进行跨品牌完全同款对标匹配，标价差异受配置与规格影响。</li>
+            <li>数据严禁直接推导为销量、市场占有率或降价策略。</li>
+          </ul>
+        </div>
+        <!-- 「查看数据指纹」折叠区默认收起（既有行为零改动）：📑 指纹清单 + 📋 Schema 契约 -->
+      </div>
+
+      <!-- 位置锚点：产出文件卡（既有，零改动） -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 class="card-h" style="margin: 0;">📁 产出文件</h3>
+          <span style="display: flex; gap: 6px;">
+            <button type="button" class="btn btn-ghost btn-sm">打包 zip</button>
+            <button type="button" class="btn btn-ghost btn-sm">Finder 打开</button>
+          </span>
+        </div>
+        <div class="omit" style="margin-bottom: 0;">（FileList 既有内容，原型略——本卡为 S5 位置锚点：manifest 卡恒在 Dashboard 之后、本卡之前）</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>S5 · 增量落点与条件（UI 侧唯一代码改动，恰 1 行）</b>：TaskDetail.tsx:241-246 现行两条件块——第二块 <span class="mono">cat !== 'product-price' &amp;&amp; task.status === 'succeeded'</span> 放宽为 <span class="mono">task.status === 'succeeded'</span>，JSX 位置不动 → DOM 序恒为 Dashboard → manifest 卡 → 产出文件卡。
+      <div class="coderef">{cat === 'product-price' && task.status === 'succeeded' && ( &lt;ProductPriceDashboard taskId={task.id} /&gt; )}
+{cat !== 'product-price' && task.status === 'succeeded' && ( &lt;UniversalManifestCard taskId={task.id} /&gt; )}   ← 仅此行条件放宽</div>
+      位置选「Dashboard 之后」：manifest 卡是全类目统一的交付资产层，置于场景专属分析面之下、通用文件面之上，与四类目「分析面 → 交付面 → 文件面」分层一致（提案决策 2 开放问题在此落定）。
+    </div>
+    <div class="note">
+      <b>限制声明数据链（数据闭环属本批 PRD 决策 4 的对照项——商品不在其列）</b>：商品 manifest 的 limitations 来自 firecrawl 既有透传 <span class="mono">limitations: report.caveatsAndLimits</span>（pipeline.ts:180），4 条为 analyzer 恒定产出（analyzer.ts:158-163），<b>不依赖样本数、非 UI 硬编码</b>。链路：runner.ts:207 默认透传 <span class="mono">--analyze</span> → main.ts:198 <span class="mono">analyze &amp;&amp; succeeded &gt; 0</span> 进 pipeline → manifest.json 落盘（pipeline.ts:185）→ GET /api/tasks/:id/manifest 200 → 卡片渲染。F6 修复后指标真实非零（修复前 manifest 亦落盘但 totalRecords 恒 0——快照目录错位）；「真实可见」= F6（数据侧）+ S5（展示侧），两者独立验收与回滚（KA-5）。
+    </div>
+    <div class="note">
+      <b>零新字符串</b>：卡头「标准化交付资产规范 (Delivery Manifest v{…})」、副标、SHA-256 徽标、导出按钮、指标四标签、「⚠️ 限制声明 (manifest limitations)」全部为 UniversalManifestCard 既有文案；limitations 条目为 manifest 数据原文。指纹折叠默认收起、行为零改动。
+      <b>FA1 披露</b>：本页将出现两个「📦 导出标准化交付包 (ZIP)」入口（Dashboard 内嵌面板与本卡，同指 /api/tasks/:id/delivery-package）；Dashboard「⚠️ 业务解释与口径边界」与本卡「⚠️ 限制声明」渲染同一 caveatsAndLimits 数组（前者经 analysis_summary.json、后者经 manifest.limitations），4 条同页各出现一次——「不动 Dashboard」最小改动的必然结果，功能无冲突，语义分工成立（分析口径边界 vs 交付资产限制）。
+      <b>FA2 披露</b>：副标「由统一底座 data-governance 自动签发」对商品任务不完全准确（product manifest 由 firecrawl pipeline 自建落盘，不经 data-governance 包）；零字符串约束下不改。
+    </div>
+  </div>
+</section>
+
+<!-- ============ §2 态 B + G6 等价对照 ============ -->
+<section class="proto-sec" id="s2">
+  <div class="proto-sec-h">§2 — 态 B：无 manifest 静默缺席（无空壳）＋ G6 改前/改后等价对照<span class="refs">PRD 决策 5 ｜ GRILL G6</span></div>
+  <div class="proto-frame">
+
+    <div class="state-label">状态 B：analyze:false 或 succeeded=0 —— Dashboard 与 manifest 卡双双静默缺席</div>
+    <div class="view" style="padding-bottom: 0;">
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px;">
+        <h1 class="view-title" style="margin: 0;">商品价格分析 · 品牌A/B/C商品标价中位数对比样板</h1>
+        <span class="tag-badge chip-accent" style="font-size: 11px; padding: 2px 8px;">🏷️ 商品标价分析</span>
+      </div>
+      <p class="view-desc">采集任务 · 创建于 2026/10/16 11:05</p>
+
+      <div class="omit" style="margin-bottom: var(--sp-lg);">↓ 此处原应有 Dashboard 与 manifest 卡的位置——两卡均静默 return null，无空壳、无加载占位、无错误提示（本框为合同标注，非产品 UI，实际页面此处为空白）↓</div>
+
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 class="card-h" style="margin: 0;">📁 产出文件</h3>
+          <span style="display: flex; gap: 6px;">
+            <button type="button" class="btn btn-ghost btn-sm">打包 zip</button>
+            <button type="button" class="btn btn-ghost btn-sm">Finder 打开</button>
+          </span>
+        </div>
+        <div class="omit" style="margin-bottom: 0;">（FileList 既有内容，原型略）</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>态 B 机理（404 静默兜底是唯一路径）</b>：<span class="mono">analyze:false</span>（runner.ts:207 不传 --analyze）或 <span class="mono">succeeded=0</span>（main.ts:198 短路）→ 无 manifest.json → 路由 404（evidence.ts:254-255）→ 卡内 <span class="mono">!res.ok → null</span> ＋ <span class="mono">if (!manifest) return null</span>（UniversalManifestCard.tsx:45/60）→ 整卡不存在。此路径下 analysis_summary.json 同缺 → Dashboard <span class="mono">!report → null</span>，两卡同缺席。<b>product 预览任务（dryRun ∧ succeeded）同走此兜底</b>（预览无落盘文件）——与现状 Dashboard 对预览的空表现同路径，零新增可见差异。UI 端不得硬编码或兜底伪造 caveats（N14）。
+    </div>
+
+    <div class="state-label">G6 等价性证明：改前 → 改后（唯一增量 = product-price ∧ succeeded）</div>
+    <div class="view" style="padding-top: 0; padding-bottom: 0;">
+      <table class="g6table">
+        <thead>
+          <tr><th>类目 × 任务态</th><th>改前 <span class="mono">cat !== 'product-price' &amp;&amp; succeeded</span></th><th>改后 <span class="mono">succeeded</span></th><th>行为变化</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>product-price · succeeded（正式）</td>
+            <td>不渲染卡（仅 Dashboard）</td>
+            <td>Dashboard 之后渲染卡</td>
+            <td class="delta">唯一增量（S5）</td>
+          </tr>
+          <tr>
+            <td>product-price · succeeded · dryRun 预览</td>
+            <td>不渲染卡</td>
+            <td>尝试渲染 → manifest 404 → 静默 null</td>
+            <td class="same">零可见变化</td>
+          </tr>
+          <tr>
+            <td>product-price · queued / running / partial / failed / canceled</td>
+            <td>不渲染卡</td>
+            <td>不渲染卡</td>
+            <td class="same">零变化</td>
+          </tr>
+          <tr>
+            <td>cninfo / weather / api / rss · succeeded</td>
+            <td>渲染卡</td>
+            <td>渲染卡（同一实例）</td>
+            <td class="same">零变化</td>
+          </tr>
+          <tr>
+            <td>上述类目 · 非 succeeded 全部终态</td>
+            <td>不渲染卡</td>
+            <td>不渲染卡</td>
+            <td class="same">零变化</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <b>G6 结论</b>：条件对非 product 类目严格等价（status 枚举六值全覆盖，partial/failed 等非 succeeded 终态改前改后均不渲染）；本增量不触碰 S4 既有面的任何状态，S4 基线（裁决③区块形态、N3 无 limitations 不渲染）对商品任务原样生效。负面清单 N11-N15：不渲染于 partial/failed/canceled；不动 Dashboard 与位置语义；不新增组件；无空壳；零新字符串。
+    </div>
+  </div>
+</section>
+
+<footer class="proto-foot">
+  <p><b>Trace 摘要</b>：S5 ← PRD 决策 5（渲染条件 + 位置）/ 提案决策 2（limitations 闭环 + 商品卡落点）/ GRILL G6（等价性证明 + 404 静默兜底）；区块形态 ← 既有合同裁决③；负面清单 ← 既有 N3/N9 延伸（N11-N15）。</p>
+  <p><b>Data fidelity</b>：任务标题、品牌表数值、manifest 指标（v1.0-m9x2k4ab / 9 条 / 88.9% / 证据覆盖率 100.0%）为<b>合成数据</b>（9 条对齐 PRD 决策 2 A18 断言）；生成引擎 <span class="mono">web-crawler/firecrawl-scraper</span>、manifestVersion <span class="mono">1.0.0</span> 为 pipeline.ts 真实值；限制声明 4 条为 <span class="mono">crawlers/firecrawl-scraper/src/analyzer.ts:158-163</span> 源码原文逐字复制。理由：增量未实现，真实形态以 firecrawl pipeline 落盘产物为准。</p>
+  <p><b>Artifact format</b>：single-page HTML ｜ 渲染工具 = 无（纯静态，浏览器直接打开）｜ 无 JS、无外部资源、无网络请求 ｜ token 值自 tokens.css 逐字内联，卡/Dashboard 形态按组件源码 inline style 手工复刻 ｜ navy 批注层为合同标注，非产品 UI。合同补记全文见 <span class="mono">.flow/ui-contract.md</span>「增量补记」章节；既有原型 <span class="mono">.flow/ui/index.html</span> 零改动。</p>
+</footer>
+
+</body>
+</html>

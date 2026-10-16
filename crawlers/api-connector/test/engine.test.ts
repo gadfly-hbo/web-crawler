@@ -103,6 +103,11 @@ test('runApiConnector: 正常分页与附件下载流程', async () => {
     assert.ok(indexContent.includes('宏观分析报告'));
     assert.ok(indexContent.includes('科技行业周报'));
 
+    // 递延收敛批：manifest 携带限制声明（有附件落盘即生成 manifest）
+    const manifest = JSON.parse(await readFile(path.join(tmp, 'manifest.json'), 'utf8'));
+    assert.ok(Array.isArray(manifest.limitations) && manifest.limitations.length > 0);
+    assert.ok(manifest.limitations.some((l: string) => l.includes('不推断')));
+
     // 第二遍执行对同一批文件发出 skipped 事件
     const secondEvents: CrawlEvent[] = [];
     const secondSummary = await runApiConnector({

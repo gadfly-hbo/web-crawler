@@ -1,0 +1,3 @@
+# A19 扫描佐证 fixture：证明 .yaml 等补充扩展名进入扫描基数（G4）。
+# 内容主机名必须在 allowlist 内（example.com 属 RFC 2606 基础放行域）。
+target: https://example.com/report

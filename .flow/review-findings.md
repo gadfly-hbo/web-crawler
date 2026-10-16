@@ -1,72 +1,71 @@
-# WC-AR-06 独立评审报告（REVIEW · 第 2 轮）
+# REVIEW — 递延项收敛批（F6 领衔）
 
 - **日期**：2026-10-16
-- **评审者**：dev-flow REVIEW 阶段第二轮独立子代理（未参与实现、未参与第一轮评审；全部结论以代码与命令实测为证）
-- **fixed point（review_base）**：`2f6a931`（= HEAD，0 提交；范围 = `git diff 2f6a931` + 未跟踪新文件）
-- **上轮上下文**：第一轮 verdict=FAIL，唯一 blocking 为 F-1（A19 扫描器对数字/括号 IP 字面量整体放行）；本轮任务 = 核实 F-1 闭合、对抗探针验证判类边界、复跑全量门禁、回归扫、确认 F2-F5 处置记录
+- **评审者**：dev-flow REVIEW 阶段独立评审者（全新上下文，未参与实现与红队；一切结论以代码与命令输出为证）
+- **Fixed point**：`9e86c45`（main）；范围 = `git diff 9e86c45`（21 文件，+391/−289，其中代码 16 文件 + 未跟踪 2 文件）+ `.flow/` 流程产物扫读；baseline_dirty = []
 
-## Verdict：**PASS**
+## Verdict: **PASS**
 
-F-1 已按其 recheck 判据闭合（注入 `https://8.8.8.8/x` → A19 红，实测复现），任务指定的全部对抗探针判类边界逐项正确，全量门禁三段 exit 0 且 204/204 逐包吻合，修复面收敛在 `adoption.test.ts` 单文件，F2-F5 处置记录在案。本轮新发现 2 条 **non-blocking**（R2-1 无点整数/十六进制公网 IP 编码绕过判类——G7 文字的残留窄缺口，今日零实害；R2-2 tasks.md T4 证据描述未随修复更新），均不构成阻塞。
+无 blocking finding。五件小修全部按提案五决策、PRD 决策 1-9、GRILL G1-G6、UI 增量合同 S5/N11-N15、红队 5 放行条件落地；两处实现偏差（pipeline.test 驱动路径、waitForFile）均**必要、正确、且在 tasks.md 证据中如实记录**。全量门禁亲自复跑三段 exit 0，**205/205** 与声明逐位吻合。
 
-## 1. F-1 闭合核实：**成立**
+## 门禁复跑（亲自执行，仓库根）
 
-**现实现**（`apps/workbench/test/adoption.test.ts:95-114`）：新增 `BOUNDARY_PUBLIC_IPS = {11.0.0.1, 172.15.0.1}`（egress 边界测试对象）与 `ipLiteralAllowed`——构造 `http://${h}/` 后复用 `data-governance/egress` 的 `egressBlockReason` 判类：非公网段（门禁拦截 → 返回非 null reason）放行；公网（返回 null）仅边界清单放行。接线点：括号 IPv6 走 `adoption.test.ts:108`，点分数字字面量走 `adoption.test.ts:114`。
-
-**判类底座实测**（直接调用 `packages/data-governance/src/egress.ts` 的 `egressBlockReason`，tsx 真值表）：
-
-| 主机 | egressBlockReason | A19 侧效果 |
+| 段 | 命令 | 结果 |
 |---|---|---|
-| `0.1.2.3` / `169.254.169.254` / `127.1` / `0x7f000001` / `0177.0.0.1` / `[fe80::1]` / `[fc00::1]` / `[::]` / `[::1]` | 拦截（非公网） | 放行 ✓ |
-| `8.8.8.8` / `1.1.1.1` / `[2600::]` | null（公网） | 拒绝 ✓（不在边界清单） |
-| `11.0.0.1` / `172.15.0.1` | null（公网） | 放行 ✓（命中边界清单，修复设计生效） |
+| 测试 | `pnpm test` | **exit 0**；fail=0；tests/pass = data-governance **10** + firecrawl-scraper **27** + api-connector **20** + rss-collector **32** + cninfo-reports **14** + workbench **102** = **205/205**（实测两轮均全绿，二轮 9.0s / 10.6s，无 flake） |
+| 类型 | `pnpm typecheck` | **exit 0**（6 包全部 Done） |
+| 构建 | `pnpm build` | **exit 0**（vite 71 modules，built in 600ms） |
 
-短格式/十六进制经 `new URL()` 归一化（`127.1`→`127.0.0.1`、`0x7f000001`→`127.0.0.1`）后判类，符合 G7「parse 后判」。
+计数核对：基线 204（红队 V3：10+27+20+32+14+101）+1（N4）= 205 ✓；**既有 204 用例零回退**。
 
-**Recheck 判据复现（沙箱法，未触碰仓库文件）**：将仓库 rsync 复刻到 `/tmp/wc-ar06-r2-probe`（排除 node_modules 等，`adoption.test.ts` 原样未改，软链 `data-governance`），在沙箱 `test/probe.ts` 注入全部探针后运行 `tsx --test test/adoption.test.ts`：
+## Spec 轴 — 逐项核对（全部实证）
 
-- **exit 1，违规清单恰为 `8.8.8.8`、`1.1.1.1`、`[2600::]` 三条**（F-1 recheck「注入 `https://8.8.8.8/x` → 应红」满足，且红得点名）；
-- 任务指定的 7 条应放行探针（`0.1.2.3`/`169.254.169.254`/`127.1`/`0x7f000001`/`[fe80::1]`/`[fc00::1]`/`[::]`）及附加探针（`0177.0.0.1`/`[::1]`/`11.0.0.1`/`172.15.0.1`）全部未触发违规。
+**T1 F6+A18** ✓ `crawlers/firecrawl-scraper/src/engine.ts:21` 构造改 `path.join(options.outDir, 'snapshots')`（唯一写入点）。三消费端对齐经代码实证：`src/main.ts:199`（--analyze 读 `outDir/snapshots`）、`apps/workbench/server/routes/evidence.ts:133`（snapshot-content 拼 `outDir/snapshots/<id>`）、`src/pipeline.ts:180`（manifest 声明 `snapshotsDir: 'snapshots/'`）。`engine.test.ts:73-79` 两层断言；`product-smoke-e2e.test.ts:95-117` 顶层反向断言 + `snapshots/` 恰 9 个 + A18 分析断言（`totalRecords === 9` + 三品牌 deepEqual）。旧 `TODO(F6)` 零残留；A18 为修复后断言，不给修复前缺陷背书。**全链路真实可用性**：product-smoke 经 workbench 队列真实 spawn firecrawl CLI（--mock --analyze），磁盘实证快照落 `snapshots/` 且分析真实产出——`/snapshot-content` 路由读同一布局，代码路径推理成立。
 
-## 2. 全量门禁复跑（本机实测，2026-10-16）
+**T2 limitations** ✓ cninfo `engine.ts:354-357`、api `engine.ts:438-441` 各传 2 条，与 PRD 决策 4 **逐字一致**；断言扩展落点与 G2 钉死位置吻合（`json-mode.test.ts:174-178`、api `engine.test.ts:106-110`），深度=非空+`.some(includes(关键短语))`。
 
-| 段 | 命令 | exit | 结果 |
-|---|---|---|---|
-| 1 | `pnpm test` | **0**（~10.7s） | data-governance 10 + firecrawl-scraper 27 + api-connector 20 + rss-collector 32 + cninfo-reports 14 + workbench 101 = **204 pass / 0 fail** |
-| 2 | `pnpm typecheck` | **0** | 六包 Done，含 workbench `tsc --noEmit && tsc --noEmit -p web` |
-| 3 | `pnpm build` | **0** | vite 71 modules transformed，built in 633ms，dist 产物落盘 |
+**T3 UI S5** ✓ `TaskDetail.tsx:244-246` 条件恰放宽 1 行（+1 行注释），JSX 块位置不动：Dashboard → UniversalManifestCard → 「📁 产出文件」。Dashboard 零改动、无新组件/路由/字符串（N12/N13/A3 成立）；G6 等价性成立；N14 404 静默兜底由组件既有 `if (!manifest) return null` 承载，无空壳。
 
-各包计数取自测试日志 `ℹ tests/pass/fail` 行，与 tasks.md T6 声明的「204/204（10+27+20+32+14+101）」**逐包逐数吻合**。真实仓库运行中 `A01`、`A19` 两条用例均 ✔（workbench 101 内）。
+**T4 A19** ✓ 判类 `adoption.test.ts:112` `/^\d+$/ || /^0x[0-9a-f]+$/i → ipLiteralAllowed`；**只读探针实证**（tsx 引入 egress.ts 复算）：`134744072`/`0x62626262` → 拒绝（红），`2130706433`/`0x7f000001` → 放行（绿）——无点整型经 `parseIpv4` 短格式路径正确展开。扩展名 +4；fixture `a19-scan-fixture.yaml` 在位（host 在 RFC 2606 放行域）；G4 包含断言在位且用 `path.join` 平台安全——kill 判据未触发。
 
-## 3. 回归扫：修复面收敛确认
+**T5 RSS 标题** ✓ `task-params.ts:109` `（${urls.length} Feed）`；全仓 grep 实证断言**恰三处**，值与 G5 预计算逐字一致，无第四处——KA-3 kill 判据未触发。
 
-- **mtime 证据**：全部实现文件落在第一轮评审时间窗内；第一轮之后唯一被改动的代码文件是 `adoption.test.ts`。当前 porcelain 15M+8?? 相对第一轮「14 修改+8 未跟踪」多出的 1 个 M 即 `.flow/review-findings.md` 本身（第一轮报告写入），无范围外文件出现。
-- **无既有用例回退**：204/204，六包计数 = 基线 194（10+27+20+32+14+91）+ 新增 10（workbench 101），两处 fixture 修正包（firecrawl 27/27、api-connector 20/20）仍绿。
+**T6 N4** ✓ `runner.ts:94` `if (canceled) return;` 位于 emit 之前，超时不再重复 terminate，cancel 的宽限计时器仍兜底 SIGKILL。新用例按 G3 时序（stubborn-crawler + 2500/1500），实测 2549ms 正中设计窗口；既有正向超时用例仍绿（正反一对齐）。
 
-## 4. F2-F5 处置记录核实：在案
+**T7 VERIFY** ✓ 见门禁表；分文件计数声明全部核实：cninfo json-mode 恰 10、api engine 恰 8、runner 恰 7、T5 的「35/35」= task-params 17 + api 16 + rss-e2e 2——**七条勾选证据无虚假**。
 
-`.flow/state.json` history 含完整链条：`REVIEW→CONVERGE`（第一轮 FAIL 摘要）→ `CONVERGE→IMPLEMENT`（「确认 F-1 blocking 成立；工作项=IP 判类改为复用 egressBlockReason…F2-F5 non-blocking 记录不行动」）→ `IMPLEMENT→VERIFY`（修复+探针）→ `VERIFY→REVIEW`（三段 exit 0）。四条均为前向缺口/加固建议/风格 nit/文档性 nit，无一是 correctness bug，**无升级项**。
+### 两处实现偏差的正当性裁决
 
-## Findings（本轮新增，均 non-blocking）
+1. **pipeline.test 驱动路径更新**（红队 KA-1/PRD 决策 1 均预判「不动」）：**偏差必要且正确**。修复前 engine 顶层写入使 `outDir: snapshotsDir` 恰好落 `tmpDir/snapshots/snap_*`；修复后若不改，会双重嵌套而 pipeline 读不到。实现把 engine outDir 改为 `tmpDir`，pipeline 读取路径与全部断言零改动。KA-1 kill 判据不触发——这是驱动方式路径改写，非断言新增。tasks.md 证据如实记录。
+2. **waitForFile 产物等待**（规格未预列）：**偏差正确**。`done` 事件在 `engine.run` 内部发出，分析管线在 run 返回之后才执行——workbench 队列在 done 即置终态，紧读产物存在真实竞态（实现期调试脚本实证）。确定性产物等待（50ms 轮询、30s 上限）严格优于 sleep。tasks.md 证据如实记录。
 
-### R2-1【non-blocking】无点整数/十六进制公网 IP 编码绕过判类——G7 枚举形式的残留窄缺口
+## Standards 轴
 
-- **证据**：`apps/workbench/test/adoption.test.ts:110-113`——`hostAllowed` 对一切无点 token 直接放行（注释自知「纯数字（如 2130706433）是 IP 编码 fixture」），未经 `ipLiteralAllowed` 判类。沙箱探针实证：`https://134744072/x`（=8.8.8.8 十进制）与 `https://0x62626262/x`（=98.98.98.98 十六进制）**过闸**（真值表两层均确认其为公网编码）。G7（`.flow/prd.md` GRILL 附录）枚举「点分/整数/十六进制/八进制统一 parse 后判类」，且「无点 token 忽略」条款明文限定为「非 IP」token——规格文字上此形式应判类。
-- **定级理由（non-blocking）**：今日零实害（全仓 test 目录无点数字 URL 仅 `http://2130706433/` 回环编码，即使判类也放行）；A19 威胁模型是「误引真实端点」，无点编码是非自然形态、不会误写发生，与第一轮 F-2（扩展名白名单前向缺口）同性质、同量级；第一轮 blocking 的核心（自然形态 `8.8.8.8`/`[2600::]` 过闸）已修复。
-- **归属**：spec（G7）× implementation（残留面）
-- **Recheck**：无点分支内对 `/^\d+$/` 与 `/^0x[0-9a-f]+$/i` 先经 `ipLiteralAllowed` 判类（字母 token 维持忽略）→ 注入 `https://134744072/x` → A19 应红（当前绿）。
+代码贴合仓库惯例；产品代码合计约 15 行（< PRD「<60 行」上界）；无未使用导入；Fowler 基线异味扫描无命中（`waitForFile` 与 `waitForTerminal` 形近但职责不同且同文件内联，不构成值得抽取的重复）。五件 diff 分块清晰、互不交叉，**各自构成独立回滚单元**（KA-5 达标）。`.flow/ui-contract.md` 证实 append-only（numstat 77/0）；未跟踪 2 文件均为声明工件。
 
-### R2-2【non-blocking】tasks.md T4 证据描述未随 F-1 修复更新
+## Findings
 
-- **证据**：`.flow/tasks.md` T4 证据仍描述「数字字面量（含 0x/八进制/纯整数）、IPv6 括号」整体放行；修复后点分数字与括号 IPv6 均已改为判类（`8.8.8.8`/`[2600::]` 拒绝），该行对这两类已不属实（仅「纯整数」仍整体放行，即 R2-1）。修复处置更新了 state.json 而未同步 T4 证据行。
-- **归属**：task（T4 证据）/ 文档漂移
-- **Recheck**：T4 证据行更新为判类语义（点分/括号经 egressBlockReason 判类、边界公网 11.0.0.1/172.15.0.1、无点整数现状整体放行——或随 R2-1 一并收敛）。
+**Blocking：none。**
 
-## 观察项（不构成 finding）
+**Non-blocking**（观察项，不影响放行）：
 
-- state.json history 的 `at` 时间戳为流程记事性标称时间，与文件 mtime 实际序列存在整体平移；属 orchestrator 记录风格，链条完整性与内容不受影响。
-- 探针沙箱与真值表脚本位于 /tmp（均为 /tmp 产物，仓库零改动）。
+| # | 位置 | 内容 | 归属上游阶段 | recheck 判据 |
+|---|---|---|---|---|
+| 1 | `engine.test.ts:74-75` | G1 原文「顶层 readdir 恰为 `['snapshots']`」，实现为仅过滤目录后 deepEqual——顶层若有文件会被容忍（本场景等价，契约仍锁住） | GRILL G1 措辞精度 | 改断言全量 readdir 仍绿即闭环；不改亦无实际暴露面 |
+| 2 | `TaskDetail.tsx:244` | 合同 A0「恰 1 行」实现多 1 行 JSX 注释（零行为）；tasks.md 已透明记录 | UI-GATE A0 措辞 | 删注释行后 build 仍过即证明纯文档 |
+| 3 | `runner.test.ts:103-124` | N4 用例依赖「fixture 启动 ≪ 1500ms」时序前提——极端负载下可能假红（本机两轮全绿） | GRILL G3 | CI 偶发红按 V3 政策复跑；连续红则提高 timeoutMs |
+| 4 | `.flow/prd.md:24` vs `pipeline.test.ts:16-18` | PRD 决策 1「pipeline 测试零改动」被实证修正（驱动路径需更新）——PRD 吸收红队时的预测精度缺口，非实现过错 | PRD 决策 1 / KA-1 | 后续规格枚举测试更新面时区分「断言面 vs 驱动面」措辞 |
+| 5 | `.flow/prd.md:39` | PRD Testing「新增约 +3」与 G2「断言扩展不新建用例」自相矛盾；实际 +1（205）以 G2 为准 | PRD 内部口径 | 引用计数以 G2/T7 实测为准 |
+| 6 | `runner.ts:94` | PRD 决策 9「回调首行」实现为第二语句（`if (exited) return` 是既有首行）；语义判据已被新用例证明 | PRD 决策 9 措辞 | 无需改动 |
 
-## 结论
+## 复跑实际结果（要点）
 
-F-1 按其 recheck 判据闭合，判类边界经对抗探针与真值表双重实证，门禁 204/204 三段全绿与声明逐包吻合，修复面收敛单文件，F2-F5 处置记录在案。R2-1/R2-2 两条 non-blocking 建议随后续批次收敛（R2-1 若采纳修复约 3 行：无点数字 token 先判类再放行）。**REVIEW 第 2 轮：PASS。**
+- `pnpm test` → exit 0：合计 **205/205，0 fail**（两轮）。
+- `pnpm typecheck` → exit 0（六包全 Done）。
+- `pnpm build` → exit 0（vite ✓ 600ms）。
+- 只读探针（A19）：`134744072 → REJECTED`、`0x62626262 → REJECTED`、`2130706433 → ALLOWED`、`0x7f000001 → ALLOWED`。
+
+## 限制声明
+
+- `/tasks/:id/snapshot-content` 与 `/evidence` 的 HTTP 路由级端到端未单独起服探针：可用性由「product-smoke 真实 spawn 落盘布局实证 + evidence.ts:133 代码路径拼接一致 + 既有 evidence-api.test 手造同布局 fixture 用例全绿」三证合成推理（PRD 决策 3 本就裁定以落盘产物为准，不新增路由级用例）。
+- 本评审未修改任何文件；门禁两轮全绿，未观测 timing flake。

@@ -106,7 +106,7 @@ export function summarizeTask(params: TaskParams, dryRun: boolean): string {
     return `${prefix}商品价格分析 · ${params.name || '未命名'}`;
   }
   if (params.sourceType === 'rss') {
-    return `RSS 采集 · ${params.name || '未命名'}`;
+    return `RSS 采集 · ${params.name || '未命名'}（${params.urls.length} Feed）`;
   }
   if (params.sourceType === 'api-connector') {
     const prefix = dryRun ? '【预览】' : '';

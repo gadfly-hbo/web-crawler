@@ -100,6 +100,28 @@ test('任务级超时：到点发结构化 error 事件并终止进程，无残�
   assert.equal(await waitPidGone(handle.pid!), true, '子进程应已终止');
 });
 
+test('N4：取消后超时到点不再追加「任务超时」事件（取消语义干净）', async () => {
+  // G3 确定性时序：stubborn-crawler 忽略 SIGTERM——cancel(ready 后) 早于 1500ms 超时，
+  // SIGKILL(ready+2500ms) 晚于超时 → 超时到点时 canceled=true 且 exited=false，正中修复分支
+  const lines: string[] = [];
+  const run = spawnRunner(fixture('stubborn-crawler.mjs'), { killGraceMs: 2500, timeoutMs: 1500 });
+  const handle = run(TASK, (l) => lines.push(l));
+  // 等就绪行（子进程存活信号）
+  const started = Date.now();
+  while (!lines.some((l) => l.includes('"start"'))) {
+    if (Date.now() - started > 5000) throw new Error(`子进程未就绪：${lines}`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  handle.cancel();
+  const exit = await handle.done;
+  assert.equal(exit.signal, 'SIGKILL', 'SIGKILL 是「超时到点时仍未退出」的确定性代理证明');
+  assert.ok(
+    !lines.some((l) => l.includes('任务超时')),
+    `取消后不得再输出任务超时行，实际：${lines}`,
+  );
+  assert.ok(!lines.some((l) => l.includes('"type":"error"')), `不得有 error 类型事件行，实际：${lines}`);
+});
+
 test('进程组终止：cancel 连同孙进程一并杀死', async () => {
   const fs = await import('node:fs/promises');
   const os = await import('node:os');

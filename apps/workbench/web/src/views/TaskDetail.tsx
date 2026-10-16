@@ -241,7 +241,8 @@ export function TaskDetail(props: {
           {cat === 'product-price' && task.status === 'succeeded' && (
             <ProductPriceDashboard taskId={task.id} />
           )}
-          {cat !== 'product-price' && task.status === 'succeeded' && (
+          {/* UI 增量 S5（已批准补记 A0）：succeeded 全类目渲染 manifest 卡——对非 product 类目严格等价（G6） */}
+          {task.status === 'succeeded' && (
             <UniversalManifestCard taskId={task.id} />
           )}
 

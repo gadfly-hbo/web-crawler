@@ -69,11 +69,15 @@ test('ScraperEngine: 落盘快照 metadata 含真实 provider（mock_adapter）'
   const summary = await engine.run(['https://example.com/good-1']);
   assert.equal(summary.succeeded, 1);
 
-  const entries = await fs.readdir(tmpDir, { withFileTypes: true });
-  const snapDir = entries.find((e) => e.isDirectory());
-  assert.ok(snapDir);
+  // F6 修复后契约：快照统一落 outDir/snapshots/ 子目录（G1 两层定位，锁目录名=锁三消费端契约）
+  const topLevel = await fs.readdir(tmpDir, { withFileTypes: true });
+  const topDirs = topLevel.filter((e) => e.isDirectory()).map((e) => e.name);
+  assert.deepEqual(topDirs, ['snapshots'], `顶层目录应恰为 snapshots/，实得 ${topDirs.join(',')}`);
+  const snapEntries = await fs.readdir(path.join(tmpDir, 'snapshots'), { withFileTypes: true });
+  const snapDir = snapEntries.find((e) => e.isDirectory() && e.name.startsWith('snap_'));
+  assert.ok(snapDir, 'snapshots/ 下应存在 snap_* 快照目录');
   const metadata = JSON.parse(
-    await fs.readFile(path.join(tmpDir, snapDir.name, 'metadata.json'), 'utf8')
+    await fs.readFile(path.join(tmpDir, 'snapshots', snapDir.name, 'metadata.json'), 'utf8')
   );
   assert.equal(metadata.provider, 'mock_adapter');
 

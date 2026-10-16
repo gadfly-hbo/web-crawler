@@ -13,8 +13,9 @@ test('pipeline: 端到端 manifest 含 limitations（caveats 升格）与 operat
   const snapshotsDir = path.join(tmpDir, 'snapshots');
   const outDir = path.join(tmpDir, 'out');
 
+  // F6 修复后契约：engine 落 <outDir>/snapshots/（与 main.ts 调用方式一致）
   const engine = new ScraperEngine({
-    outDir: snapshotsDir,
+    outDir: tmpDir,
     adapter: new MockAcquisitionAdapter([])
   });
   const summary = await engine.run(['https://example.com/good-1']);

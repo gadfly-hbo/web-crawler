@@ -292,7 +292,7 @@ test('POST /api/tasks：合法 rss 参数创建成功（normalizeParams 分支 +
     assert.equal(task.params.unknownExtra, undefined, '未知字段丢弃');
     assert.equal(task.dryRun, false, 'rss 不支持 dry-run，创建时钳 false（G6）');
     assert.ok(task.outDir.includes('rss-collector'), '输出目录按来源隔离');
-    assert.equal(task.title, 'RSS 采集 · 公开资讯');
+    assert.equal(task.title, 'RSS 采集 · 公开资讯（2 Feed）');
   });
 });
 

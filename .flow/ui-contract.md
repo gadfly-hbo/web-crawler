@@ -191,3 +191,80 @@
 ## 10. Recheck 判据（一行）
 
 浏览器打开 `.flow/ui/index.html`：场景库五卡序=商品/财报/**RSS(active)**/气象/定制且 RSS 卡面三字段与 §4 逐字一致；RssPicker 上方为两段式 StageBar 且全页无「预览确认」「预览数量」字样；错误态四条文案与 `validateRssParams`/egress 源码逐字一致；任务列表 tab 序=全部/A股财报/商品标价分析/(气象隐藏)/通用API/RSS 资讯 且空类目不出现；manifest 卡 rss 态有限制声明 4 条列表、api 态区块整体不存在——全部命中即 PASS。
+
+---
+
+## 增量补记（递延项收敛批，2026-10-16）
+
+**Verdict: PASS** —— 唯一 UI 增量（S5）可从 PRD 决策 5 + 提案决策 2 + G6 等价性证明直接推导：两态覆盖完备（有 manifest 完整卡 / 无 manifest 404 静默兜底）、零新字符串、唯一行为增量 = product-price ∧ succeeded，无规格外扩展，无 BLOCKED 项。
+
+- 阶段：dev-flow UI-GATE 增量补记（PRD 决策 5「细节经 UI-GATE 增量补记确认」）
+- 性质：对已批准合同的 append-only 补记；既有 §0-§10 一字不动，S4 / 裁决③ / N3 / §4 术语表继续有效，本补记仅将 S4 面的类目覆盖扩展至 product-price
+- 输入（按序完整读取）：`.flow/proposal.md`（决策 2）、`.flow/prd.md`（决策 5 + GRILL G6）、`.flow/ui-contract.md`（已批准合同）；代码事实：`apps/workbench/web/src/views/TaskDetail.tsx:241-246`（现行渲染条件）、`views/components/UniversalManifestCard.tsx`（卡结构 / limitations 区块 / 404 静默兜底）、`views/components/ProductPriceDashboard.tsx`、`web/src/styles/tokens.css`；佐证源码：`crawlers/firecrawl-scraper/src/analyzer.ts:148-176`、`crawlers/firecrawl-scraper/src/pipeline.ts:152-185`、`crawlers/firecrawl-scraper/src/main.ts:197-202`、`apps/workbench/server/runner.ts:204-209`、`apps/workbench/server/routes/evidence.ts:248-256`
+- 基线：baseline_dirty=[]（补记起草于实现之前）
+
+### A0. 增量裁决 —— PASS（先行结论）
+
+TaskDetail 详情主栏（detail-main）第二渲染块条件由 `cat !== 'product-price' && task.status === 'succeeded'`（TaskDetail.tsx:244）放宽为 `task.status === 'succeeded'`——PRD Diff Gate 5 预裁（「succeeded 全类目」）的最终落定。效果：product-price ∧ succeeded 任务在 **ProductPriceDashboard 之后**、「📁 产出文件」卡**之前**渲染 UniversalManifestCard 原样实例；JSX 块位置不动，UI 侧恰 1 行条件放宽、无其他改动。位置裁「之后」：manifest 卡是全类目统一的交付资产层，置于场景专属分析面（Dashboard）之下、通用文件面（产出文件）之上，与四类目「分析面 → 交付面 → 文件面」分层一致——提案决策 2 留给 UI-GATE 的落点开放问题在此落定。
+
+### A1. Surface 增量
+
+| # | Surface | 内容 | 现状 | Trace |
+|---|---------|------|------|-------|
+| S5 | 商品任务详情 manifest 卡（= S4 面向 product-price 的类目扩展） | product-price ∧ succeeded 任务详情：ProductPriceDashboard 之后渲染 UniversalManifestCard 完整卡——卡头（🛡️ / Delivery Manifest v{manifestVersion} / SHA-256 徽标 / 导出 ZIP / 查看数据指纹）＋ 指标网格（数据资产版本 / 采集产出总数 / 有效样本率 / 生成引擎）＋ **限制声明区块（裁决③形态：指标网格后、折叠区外、常显）** ＋ 指纹折叠（默认收起） | product-price 被排除，卡不渲染（仅 Dashboard） | PRD D5；提案 D2；G6 |
+
+限制声明数据闭环归属澄清：商品 manifest 的 `limitations` 来自 firecrawl 既有透传 `limitations: report.caveatsAndLimits`（pipeline.ts:180），4 条为 analyzer 恒定产出（analyzer.ts:158-163）——**不属本批 PRD 决策 4**（决策 4 只为 cninfo/api 补传参数，商品不需要）；F6 修复使指标数值真实非零（见 A7）。本补记只做展示闭环，不动数据链。
+
+### A2. 状态覆盖（两态 + G6 等价性）
+
+**态 A · 有 manifest → 卡片完整渲染**：`analyze:true`（runner.ts:207 默认透传 `--analyze`）且 `succeeded>0` → main.ts:198 进 pipeline → manifest.json 落盘（pipeline.ts:185）→ `/api/tasks/:id/manifest` 200 → 完整卡渲染；limitations 区块随 `manifest.limitations` 非空出现（裁决③形态；无则区块不渲染、不占位——N3 对商品任务原样生效）。
+
+**态 B · 无 manifest → 卡片静默不渲染（无空壳）**：`analyze:false`（runner 不传 `--analyze`）或 `succeeded=0`（main.ts:198 短路）→ 无 manifest.json → 路由 404（evidence.ts:254-255）→ 卡内 `!res.ok → null` ＋ `if (!manifest) return null`（UniversalManifestCard.tsx:45/60）→ 整卡不存在：无空壳、无加载占位、无错误提示。此路径下 `analysis_summary.json` 同缺 → Dashboard `!report → null`，两卡同缺席。product 预览任务（dryRun ∧ succeeded）同走此兜底（预览无落盘文件），与现状 Dashboard 对预览的空表现同路径——零新增可见差异。
+
+**G6 等价性（零行为变化证明）**：`cat !== 'product-price' && status === 'succeeded'` → `status === 'succeeded'` 对**非 product 类目严格等价**——cninfo/weather/api/rss 的 queued/running/partial/failed/canceled 改前改后均不渲染（status 枚举六值全覆盖），succeeded 改前改后渲染同一卡；唯一行为增量 = product-price ∧ succeeded（S5）。与 F6/决策 4 互为独立验收与回滚单元（KA-5 批次纪律）。
+
+### A3. 术语（零新字符串）
+
+本增量不引入任何新用户可见字符串。卡片全部文案复用 UniversalManifestCard 既有文本：卡头「标准化交付资产规范 (Delivery Manifest v{…})」「由统一底座 data-governance 自动签发 · 全文件 SHA-256 防篡改」「SHA-256 签名已就绪」「📦 导出标准化交付包 (ZIP)」「查看数据指纹 ▼」、指标四标签（数据资产版本/采集产出总数/有效样本率/生成引擎）、区块标题「⚠️ 限制声明 (manifest limitations)」——均见既有合同 §4 与组件源码。商品任务的 limitations 条目内容为 manifest 数据（firecrawl caveats 原文）经数据通道呈现，非 UI 硬编码；UI 端不得改写、增删或截断。
+
+### A4. 增量负面清单（编号接续既有 N1-N10）
+
+- **N11**：partial/failed/canceled（及 queued/running）的 product-price 任务不得渲染 UniversalManifestCard——非 succeeded 恒不渲染（G6）
+- **N12**：不得改动 ProductPriceDashboard 本身（内嵌 manifest 面板、「⚠️ 业务解释与口径边界」、导出按钮组、品牌表/价格带/样本明细）与既有两渲染块的先后位置语义——仅放宽第二块的 product-price 排除；卡恒在 Dashboard 之后、「📁 产出文件」之前，不得对调
+- **N13**：不得新增组件、product 专用变体卡、路由或弹窗——复用 `<UniversalManifestCard taskId={task.id} />` 原样实例
+- **N14**：无 manifest 时不得出现空壳卡、骨架占位、加载态或错误提示——404 静默兜底是唯一路径；不得在前端硬编码或兜底伪造 caveats
+- **N15**：不得引入新 token/样式体系，不得改 UniversalManifestCard 既有区段与 slate 语系（沿既有 N9 与合同发现 F6/INFO：不做 token 半迁移）
+
+### A5. Trace links（增量）
+
+| 面 / 状态 | PRD | 提案 | GRILL |
+|-----------|-----|------|-------|
+| S5 渲染位置（Dashboard 后、产出文件前）+ 条件放宽恰 1 行 | D5 | D2（落点开放问题落定） | G6 |
+| 态 A / 态 B（manifest 有无 → 卡有无） | D5 | D2 | G6（404 静默兜底） |
+| limitations 内容来源 = firecrawl 既有 caveats（非决策 4 范围） | D4（对照项） | D2 | — |
+| 零新字符串 / 复用既有文案 | — | 约束「沿用既有 UI 形态与设计语言」 | — |
+
+### A6. Artifacts（增量工件）
+
+| 文件 | 内容 |
+|------|------|
+| `.flow/ui/addendum-product-card.html` | 增量原型：态 A（商品任务 succeeded 详情——Dashboard 摘要复刻块 + 其后 manifest 卡含 4 条限制声明 + 产出文件卡位置锚点）＋ 态 B（两卡同缺席、无空壳）＋ G6 改前/改后等价对照表 |
+
+artifact format 声明沿既有合同 §7：single-page HTML ｜ 渲染工具 = 无（纯静态）｜ 无 JS、无外部资源、无网络请求 ｜ token 值自 tokens.css 逐字内联，卡与 Dashboard 形态按组件源码 inline style 手工复刻 ｜ navy 批注层为合同标注非产品 UI ｜ 既有 `.flow/ui/index.html` 零改动。
+
+### A7. Data fidelity（增量样例披露）
+
+- **合成数据**：任务标题、Dashboard 品牌表数值、manifest 指标（datasetVersion `v1.0-m9x2k4ab`、9 条、88.9%、证据覆盖率 100.0%）为合成——「9 条」对齐 PRD 决策 2 A18 断言（totalRecords === 9）；真实形态以 firecrawl pipeline 落盘产物为准
+- **真实数据**：限制声明 4 条为 `crawlers/firecrawl-scraper/src/analyzer.ts:158-163` caveatsAndLimits 数组原文逐字——「网页标价不等于最终成交价，亦不包含优惠券、会员折扣或满减促销。」「采集样本仅代表本次采集页面，不等于全网全渠道全量商品。」「未进行跨品牌完全同款对标匹配，标价差异受配置与规格影响。」「数据严禁直接推导为销量、市场占有率或降价策略。」；生成引擎 `web-crawler/firecrawl-scraper`、manifestVersion `1.0.0` 为 pipeline.ts 真实值
+- **F6 关联**：caveats 4 条由 analyzer 恒定产出、不依赖样本数；F6 修复前 manifest 亦会落盘但指标恒 0（快照目录错位 → pipeline 读不到快照 → records 空），修复后指标真实——「真实可见」由 F6（数据侧）+ S5（展示侧）共同构成，两者独立验收，UI-GATE 补记不依赖 F6 已合入
+
+### A8. Findings（增量，严重度降序）
+
+- **FA1 · LOW** — 同页双「📦 导出标准化交付包 (ZIP)」入口与同源 caveats 双呈现：Dashboard 内嵌面板与新增卡各有一个导出按钮（同指 `/api/tasks/:id/delivery-package`）；Dashboard「⚠️ 业务解释与口径边界」（经 analysis_summary.json）与卡片「⚠️ 限制声明 (manifest limitations)」（经 manifest.limitations，pipeline.ts:180 同源透传）将同一 caveatsAndLimits 4 条在同页各渲染一次。语义分工成立（分析口径边界 vs 交付资产限制），是「不动 Dashboard」最小改动的必然结果，功能无冲突；如需收敛为单处，属后续批（超本增量范围）
+- **FA2 · LOW** — 卡头副标「由统一底座 data-governance 自动签发」对商品任务不完全准确：product manifest 由 firecrawl-scraper pipeline 自建落盘（pipeline.ts:152-185），不经 data-governance 包。零新字符串约束下不改文案，披露防误判；文案修正属后续批
+- **FA3 · INFO** — product 预览任务（dryRun ∧ succeeded）条件放宽后亦尝试渲染卡，但预览无落盘 → 404 静默兜底，无空壳；与现状 Dashboard 空表现同路径，零新增可见差异
+- **FA4 · INFO** — Dashboard 内嵌 manifest 面板无 limitations 区块（其数据类型 DeliveryManifestInfo 未含该字段，ProductPriceDashboard.tsx:43-69）；为其补齐属 Dashboard 改动，被 N12 排除
+
+### A9. Recheck 判据（一行）
+
+打开 `.flow/ui/addendum-product-card.html`：态 A 中 manifest 卡紧随 Dashboard 块之后、产出文件卡之前，限制声明 4 条与 `analyzer.ts:158-163` 源码逐字一致，卡头/指标四标签文案与既有 UniversalManifestCard 零差异；态 B 两卡同缺席且无空壳占位；G6 对照表唯一增量行 = product-price ∧ succeeded——全部命中即 PASS。

@@ -351,6 +351,10 @@ export async function run(opts: EngineOptions, reporter: Reporter): Promise<Craw
             { name: 'url', type: 'string', description: '巨潮资讯网原始下载链接', nullable: false },
             { name: 'file', type: 'string', description: '本地保存相对路径', nullable: false },
           ],
+          limitations: [
+            '公告原件为 PDF 快照落盘，不做文本抽取与结构化',
+            '披露内容以巨潮资讯网原文为准，不做二次加工',
+          ],
         });
       }
     } catch {

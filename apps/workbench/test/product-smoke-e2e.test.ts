@@ -1,8 +1,7 @@
 /**
- * WC-AR-06 T5 / A18：mock 商品样板 workbench 级采集链路冒烟（PRD 决策 8，C1 降级断言层级）。
- * 注意：本用例只固化「采集链路不变」（事件流/快照/manifest）。**不覆盖分析内容**——
- * F6 布局地雷在案（engine 快照写 outDir 顶层而 --analyze 读 outDir/snapshots/，分析产物恒空，
- * 见 WC-AR-04 handoff 递延项）。TODO(F6)：修复批将快照断言改为 snapshots/ 子目录并补分析断言。
+ * WC-AR-06 A18：mock 商品样板 workbench 级采集链路冒烟。
+ * F6 已修复（快照统一落 outDir/snapshots/）：本用例同时断言采集链路（事件流/快照/manifest）
+ * 与分析链路（analysis_summary totalRecords=9 + 三品牌汇总）。
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -47,6 +46,16 @@ async function waitForTerminal(
   }
 }
 
+/** firecrawl CLI 的 done 事件先于 analyze pipeline 完成发出（既有协议语义）——终态后需再等交付产物落盘 */
+async function waitForFile(filePath: string, timeoutMs = 30000): Promise<void> {
+  const started = Date.now();
+  for (;;) {
+    if (await fs.stat(filePath).then(() => true).catch(() => false)) return;
+    if (Date.now() - started > timeoutMs) throw new Error(`等待产物超时: ${filePath}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 test('A18 冒烟: mock 商品样板经 workbench 真实 spawn——采集链路不变（事件流/快照/manifest）', async () => {
   const dataRoot = await mkdtemp(path.join(tmpdir(), 'wb-product-smoke-'));
   const queue = new TaskQueue({ runner: makeCrawlerRunner({ repoRoot }), dataRoot });
@@ -65,6 +74,9 @@ test('A18 冒烟: mock 商品样板经 workbench 真实 spawn——采集链路�
 
     const finalTask = await waitForTerminal(queue, task.id);
     assert.equal(finalTask.status, 'succeeded', `mock 样板应成功，实际 ${finalTask.status}`);
+    // done 事件先于 pipeline 产物——等 manifest 落盘再断言交付物
+    await waitForFile(path.join(finalTask.outDir, 'manifest.json'));
+    await waitForFile(path.join(finalTask.outDir, 'analysis_summary.json'));
 
     // 事件流完整（firecrawl 词汇表，JSON.parse 内联断言——G5 裁决，不新增包依赖）
     const log = await fs.readFile(path.join(dataRoot, 'workbench', 'logs', `${task.id}.ndjson`), 'utf8');
@@ -80,18 +92,28 @@ test('A18 冒烟: mock 商品样板经 workbench 真实 spawn——采集链路�
     const done = events.find((e) => e.type === 'done');
     assert.equal(done?.summary?.failed, 0);
 
-    // 快照落盘（TODO(F6)：现状布局为 outDir 顶层 snap_*，修复批应改为 snapshots/ 子目录断言）
+    // 快照落盘（F6 修复后契约：outDir/snapshots/<snap_*>/，与消费端一致）
     const outEntries = await fs.readdir(finalTask.outDir);
-    const snapDirs = outEntries.filter((e) => e.startsWith('snap_'));
-    assert.equal(snapDirs.length, 9, `快照应落 9 个（F6 现状：顶层 snap_*），实得 ${snapDirs.length}`);
+    assert.ok(!outEntries.some((e) => e.startsWith('snap_')), `顶层不得再出现快照目录：${outEntries.join(',')}`);
+    const snapshotsDir = path.join(finalTask.outDir, 'snapshots');
+    const snapDirs = (await fs.readdir(snapshotsDir)).filter((e) => e.startsWith('snap_'));
+    assert.equal(snapDirs.length, 9, `snapshots/ 下应恰 9 个快照，实得 ${snapDirs.length}`);
     const sampleMeta = JSON.parse(
-      await fs.readFile(path.join(finalTask.outDir, snapDirs[0], 'metadata.json'), 'utf8'),
+      await fs.readFile(path.join(snapshotsDir, snapDirs[0], 'metadata.json'), 'utf8'),
     );
     assert.ok(sampleMeta.content_hash, '快照 metadata 含哈希');
 
     // manifest 落盘
     const manifest = JSON.parse(await fs.readFile(path.join(finalTask.outDir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.manifestVersion, '1.0.0');
+
+    // A18 补强：F6 修复后分析链路真实产出（红队 V2 探针前提成立）
+    const analysis = JSON.parse(
+      await fs.readFile(path.join(finalTask.outDir, 'analysis_summary.json'), 'utf8'),
+    );
+    assert.equal(analysis.totalRecords, 9, `mock 样板应产出 9 条记录，实得 ${analysis.totalRecords}`);
+    const brands = (analysis.brandSummaries ?? []).map((b: { brand: string }) => b.brand);
+    assert.deepEqual(brands.sort(), ['Brand A', 'Brand B', 'Brand C'], `三品牌汇总应齐，实得 ${brands.join(',')}`);
   } finally {
     await queue.close();
     await rm(dataRoot, { recursive: true, force: true });

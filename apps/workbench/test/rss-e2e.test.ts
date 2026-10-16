@@ -131,7 +131,7 @@ test('RSS e2e: 双 Feed 一成一败 → 终态 partial、counts/failures 如实
       urls: [`http://127.0.0.1:${port}/feed.xml`, `http://127.0.0.1:${port}/missing.xml`],
     };
     const task = await queue.create(params, false);
-    assert.equal(task.title, 'RSS 采集 · 公开资讯 e2e');
+    assert.equal(task.title, 'RSS 采集 · 公开资讯 e2e（2 Feed）');
 
     const finalTask = await waitForTerminal(queue, task.id);
 

@@ -435,6 +435,10 @@ export async function runApiConnector(options: RunApiConnectorOptions): Promise<
               { name: 'file', type: 'string', description: '保存文件相对路径', nullable: false },
               { name: 'time', type: 'string', description: '抓取时间戳', nullable: false },
             ],
+            limitations: [
+              '响应内容按配置路径规则提取，字段缺失不推断不补全',
+              '附件按原文件字节落盘，内容真实性与源站一致',
+            ],
           });
         }
       } catch {

@@ -91,6 +91,7 @@ export function spawnRunner(spec: SpawnSpec, opts: { killGraceMs?: number; timeo
     if (opts.timeoutMs !== undefined) {
       timeoutTimer = setTimeout(() => {
         if (exited) return;
+        if (canceled) return; // N4：用户已取消（宽限窗内）——不再追加「任务超时」事件，取消语义干净
         emit(
           JSON.stringify({
             type: 'error',

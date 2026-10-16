@@ -170,6 +170,11 @@ test('--json 正式运行输出 start→company→file→done 序列，文件落
     const indexLines = (await readFile(path.join(out, 'index.jsonl'), 'utf8')).trim().split('\n');
     assert.equal(indexLines.length, 1);
     assert.equal(JSON.parse(indexLines[0]).status, 'downloaded');
+
+    // 递延收敛批：manifest 携带限制声明（非 dry-run 必落盘）
+    const manifest = JSON.parse(await readFile(path.join(out, 'manifest.json'), 'utf8'));
+    assert.ok(Array.isArray(manifest.limitations) && manifest.limitations.length > 0);
+    assert.ok(manifest.limitations.some((l: string) => l.includes('不做文本抽取')));
   } finally {
     await fake.close();
     await rm(out, { recursive: true, force: true });

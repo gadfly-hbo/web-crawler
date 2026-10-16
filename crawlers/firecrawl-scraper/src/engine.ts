@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import type { ScrapeReporter, ScrapeSummary } from './events.js';
 import type { ScrapeOptions, WebAcquisitionPort } from './port.js';
 import { SnapshotStorage } from './storage.js';
@@ -16,7 +18,8 @@ export class ScraperEngine {
   private readonly reporter?: ScrapeReporter;
 
   constructor(options: { outDir: string; adapter: WebAcquisitionPort; reporter?: ScrapeReporter }) {
-    this.storage = new SnapshotStorage(options.outDir);
+    // F6 修复：快照统一落 outDir/snapshots/，对齐消费端（--analyze、workbench evidence 路由、manifest snapshotsDir 声明）
+    this.storage = new SnapshotStorage(path.join(options.outDir, 'snapshots'));
     this.adapter = options.adapter;
     this.reporter = options.reporter;
   }
